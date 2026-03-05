@@ -60,8 +60,8 @@ the **leaf** (deepest) level; aggregates roll upward through each level to the r
 | Template | Levels | Use Case |
 |----------|--------|----------|
 | `default` | `[items]` | Flat list of vulnerability measurements |
-| `QSD` | `[questionnaire, section, question]` | Questionnaire-based risk assessment |
-| `THHFA` | `[test, horizon, host, finding, annotation]` | Security / penetration testing |
+| `basic_questionnaire` | `[questionnaire, section, question]` | Questionnaire-based risk assessment |
+| `security_scan` | `[test, horizon, host, finding, annotation]` | Security / penetration testing |
 
 Custom hierarchies: provide an array of 1–8 level names.
 
@@ -98,12 +98,12 @@ Create a new measurement session.
 }
 ```
 
-**Request (THHFA template with custom TTL):**
+**Request (security_scan template with custom TTL):**
 
 ```json
 {
   "name": "Q3 2026 Penetration Test",
-  "hierarchy": "THHFA",
+  "hierarchy": "security_scan",
   "scalingBase": 4,
   "maximumValue": 100,
   "ttl": 604800
@@ -118,7 +118,7 @@ Create a new measurement session.
     "id": "msr_a1b2c3d4",
     "name": "Q3 2026 Penetration Test",
     "hierarchy": {
-      "template": "THHFA",
+      "template": "security_scan",
       "levels": ["test", "horizon", "host", "finding", "annotation"]
     },
     "configuration": {
@@ -147,7 +147,7 @@ and computed aggregates at every level.
     "id": "msr_a1b2c3d4",
     "name": "Q3 2026 Penetration Test",
     "hierarchy": {
-      "template": "THHFA",
+      "template": "security_scan",
       "levels": ["test", "horizon", "host", "finding", "annotation"]
     },
     "configuration": { "scalingBase": 4, "maximumValue": 100 },
@@ -239,7 +239,7 @@ created automatically. Values > 1.0 are auto-detected as percentages (80 → 0.8
 }
 ```
 
-**Request (THHFA with path and metadata):**
+**Request (security_scan with path and metadata):**
 
 ```json
 {

@@ -120,15 +120,15 @@ paths:
                 value:
                   name: "Web Application Scan"
               questionnaireTemplate:
-                summary: "QSD template (questionnaire → section → question)"
+                summary: "Questionnaire template (questionnaire → section → question)"
                 value:
                   name: "NIST CSF Assessment"
-                  hierarchy: QSD
+                  hierarchy: basic_questionnaire
               securityTestTemplate:
-                summary: "THHFA template (test → horizon → host → finding → annotation)"
+                summary: "Security scan template (test → horizon → host → finding → annotation)"
                 value:
                   name: "Q3 2026 Penetration Test"
-                  hierarchy: THHFA
+                  hierarchy: security_scan
                   scalingBase: 4
                   maximumValue: 100
                   ttl: 604800
@@ -216,7 +216,7 @@ paths:
                   value: 0.80
                   label: "SQL Injection"
               withPath:
-                summary: "Add factor with THHFA path"
+                summary: "Add factor with security_scan path"
                 value:
                   path: ["External", "Internet", "192.168.1.117", "SQL Injection"]
                   value: 1.0
@@ -2046,11 +2046,12 @@ components:
           description: >
             Named template or custom array of level names. V-factors are added
             at the leaf (deepest) level; aggregates roll upward.
-            Templates: "default" ([items]), "QSD" ([questionnaire, section,
-            question]), "THHFA" ([test, horizon, host, finding, annotation]).
+            Templates: "default" ([items]), "basic_questionnaire" ([questionnaire,
+            section, question]), "security_scan" ([test, horizon, host, finding,
+            annotation]).
           oneOf:
             - type: string
-              enum: [default, QSD, THHFA]
+              enum: [default, basic_questionnaire, security_scan]
             - type: array
               items:
                 type: string

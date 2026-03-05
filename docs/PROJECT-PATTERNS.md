@@ -306,8 +306,8 @@ through each level to the root.
 | Template | Levels | Use Case |
 |----------|--------|----------|
 | `default` | `[items]` | Flat list of vulnerability measurements |
-| `QSD` | `[questionnaire, section, question]` | Questionnaire-based risk assessment |
-| `THHFA` | `[test, horizon, host, finding, annotation]` | Security / penetration testing |
+| `basic_questionnaire` | `[questionnaire, section, question]` | Questionnaire-based risk assessment |
+| `security_scan` | `[test, horizon, host, finding, annotation]` | Security / penetration testing |
 
 **Custom hierarchies:** provide an array of 1–8 level names instead of a
 template name.
@@ -316,7 +316,7 @@ Intermediate hierarchy nodes are **created automatically** when a factor
 specifies a `path` array (one label per grouping level above the leaf).
 With the default single-level hierarchy, no `path` is needed.
 
-**Example — THHFA (5 levels):**
+**Example — security_scan (5 levels):**
 
 ```
 POST /v1/measurements/:id/factors
