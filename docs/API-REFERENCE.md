@@ -621,6 +621,166 @@ function to produce `hvAggregate`; `hvMax` is the aggregate of all-true values.
 
 ---
 
+## NIST — Standards-Aligned Risk Matrix
+
+Maps RSK quantitative measurements to the NIST SP 800-30 Rev 1 qualitative risk
+determination matrix (Table I-2). The 5×5 matrix evaluates **Likelihood × Impact**
+to produce a qualitative risk level.
+
+### Dual-Dimension Threat Assessment (HAM533)
+
+HAM533 produces two distinct threat outputs that map directly to the NIST axes:
+
+| Dimension | HAM533 Formula | H Value | Purpose |
+|-----------|---------------|---------|---------|
+| **Probability** | $H \times A \times M / 45$ | Actuarial (1–5) | Estimate of threat frequency |
+| **Impact** | $5 \times A \times M / 45$ | Max (certainty) | Result of threat success |
+
+### NIST Axis Derivation from RSK Components
+
+$$\text{likelihood} = T_{probability} \times V \times (1 - C)$$
+$$\text{impact} = T_{impact} \times A$$
+
+Where:
+- $T_{probability}$ = HAM533 probability output (actuarial H)
+- $T_{impact}$ = HAM533 impact output (H = max)
+- $V$ = vulnerability exposure (from CRVE3)
+- $C$ = control efficacy (from SCEP)
+- $A$ = asset value (from AsrValuation)
+
+### NIST 800-30 Qualitative Scale (Table D-2)
+
+| Level | Range | Semi-Quantitative (Likelihood) | Semi-Quantitative (Impact) |
+|-------|-------|-------------------------------|---------------------------|
+| Very Low | [0, 0.05) | 0 | 0 |
+| Low | [0.05, 0.21) | 2 | 2 |
+| Moderate | [0.21, 0.80) | 5 | 10 |
+| High | [0.80, 0.96) | 8 | 50 |
+| Very High | [0.96, 1.0] | 10 | 100 |
+
+### Risk Determination Matrix (Table I-2)
+
+|  | **VL Impact** | **L Impact** | **M Impact** | **H Impact** | **VH Impact** |
+|---|---|---|---|---|---|
+| **VH Likelihood** | Very Low | Low | Moderate | High | Very High |
+| **H Likelihood** | Very Low | Low | Moderate | High | Very High |
+| **M Likelihood** | Very Low | Low | Moderate | Moderate | High |
+| **L Likelihood** | Very Low | Low | Low | Low | Moderate |
+| **VL Likelihood** | Very Low | Very Low | Very Low | Low | Low |
+
+---
+
+### `POST /v1/nist/risk-matrix`
+
+Compute a NIST SP 800-30 risk determination from RSK measurements.
+
+**Request (pre-computed values):**
+
+```json
+{
+  "likelihood": 0.35,
+  "impact": 0.25
+}
+```
+
+**Request (RSK components with dual-dimension threat):**
+
+```json
+{
+  "threatProbability": 0.2667,
+  "threatImpact": 0.4444,
+  "vulnerability": 0.4092,
+  "controlEfficacy": 0.40625,
+  "assetValue": 0.2647
+}
+```
+
+**Request (raw IAP inputs — HAM533 auto-produces both dimensions):**
+
+```json
+{
+  "threat": { "history": 3, "access": 2, "means": 2 },
+  "vulnerability": {
+    "capabilities": 2, "resources": 2, "visibility": 2,
+    "confidentiality": 2, "integrity": 1, "availability": 2
+  },
+  "control": {
+    "controls": [
+      { "implemented": 0.75, "correction": 0.50 },
+      { "implemented": 0.90, "correction": 0.80 }
+    ]
+  },
+  "asset": {
+    "classification": 2, "users": 3,
+    "highValueData": [true, false, true, false, true, false]
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "likelihood": {
+      "value": 0.0649,
+      "level": "Low",
+      "semiQuantitative": 2
+    },
+    "impact": {
+      "value": 0.1177,
+      "level": "Low",
+      "semiQuantitative": 2
+    },
+    "risk": {
+      "level": "Low",
+      "score": 4,
+      "position": { "row": 3, "column": 1 }
+    },
+    "matrix": {
+      "levels": ["Very Low", "Low", "Moderate", "High", "Very High"],
+      "likelihoodAxis": ["Very High", "High", "Moderate", "Low", "Very Low"],
+      "impactAxis": ["Very Low", "Low", "Moderate", "High", "Very High"],
+      "cells": [
+        ["Very Low", "Low",      "Moderate",  "High",     "Very High"],
+        ["Very Low", "Low",      "Moderate",  "High",     "Very High"],
+        ["Very Low", "Low",      "Moderate",  "Moderate", "High"],
+        ["Very Low", "Low",      "Low",       "Low",      "Moderate"],
+        ["Very Low", "Very Low", "Very Low",  "Low",      "Low"]
+      ]
+    },
+    "components": {
+      "threatProbability": 0.2667,
+      "threatImpact": 0.4444,
+      "vulnerability": 0.2222,
+      "controlEfficacy": 0.5563,
+      "assetValue": 0.2647,
+      "derivedLikelihood": 0.0649,
+      "derivedImpact": 0.1177
+    },
+    "breakpoints": {
+      "likelihood": [0.05, 0.21, 0.80, 0.96],
+      "impact": [0.05, 0.21, 0.80, 0.96]
+    }
+  }
+}
+```
+
+> **Derivation trace (raw IAP → NIST):**
+> - HAM533(H=3, A=2, M=2): probability = 12/45 = 0.2667, impact = 20/45 = 0.4444
+> - CRVE3: exposure = 0.2222
+> - SCEP: efficacy = 0.5563
+> - AsrValuation: assetValue = 0.2647
+> - likelihood = 0.2667 × 0.2222 × (1 − 0.5563) = 0.0263 → **Very Low**
+> - impact = 0.4444 × 0.2647 = 0.1177 → **Low**
+> - Matrix[VL likelihood, L impact] = **Low**
+
+Custom breakpoints may be provided to adjust the qualitative mapping for
+domain-specific scales (e.g., financial risk may use different impact breakpoints
+than cybersecurity risk).
+
+---
+
 ## Error Responses
 
 All errors use a consistent envelope:

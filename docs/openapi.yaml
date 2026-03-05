@@ -39,6 +39,11 @@ tags:
     description: >
       Independent Ancillary Processes — self-contained assessments producing
       normalized 0–1 factors for RSK/RM (HAM533, CRVE3, SCEP, AsrValuation).
+  - name: NIST
+    description: >
+      NIST-aligned risk assessment — maps RSK quantitative measurements to
+      NIST SP 800-30 Rev 1 qualitative risk levels using the standard
+      5×5 Likelihood × Impact risk determination matrix.
   - name: Health
     description: Operational health and configuration endpoints
 
@@ -77,6 +82,107 @@ paths:
             application/x-yaml:
               schema:
                 type: string
+
+  # -----------------------------------------------------------------------
+  # NIST — Standards-Aligned Risk Matrix
+  # -----------------------------------------------------------------------
+  /v1/nist/risk-matrix:
+    post:
+      operationId: nistRiskMatrix
+      tags: [NIST]
+      summary: NIST SP 800-30 risk determination matrix
+      description: >
+        Maps RSK quantitative measurements to the NIST SP 800-30 Rev 1
+        qualitative risk determination matrix (Table I-2). Accepts either
+        pre-computed likelihood/impact probabilities (0–1) or RSK component
+        values from which likelihood and impact are derived.
+
+
+        HAM533 produces two dimensions of threat assessment:
+        - probability (H×A×M/45) — H is set actuarially (estimate of threat frequency)
+        - impact (5×A×M/45) — H is set to max (result of threat success, certainty)
+
+
+        When components are provided, the NIST axes are derived as:
+        - likelihood = T_probability × V × (1 − C)
+        - impact = T_impact × A
+
+
+        Where T_probability and T_impact come from HAM533's dual outputs.
+        If raw HAM533 inputs are provided, both are computed automatically.
+        If a single threatPotential scalar is provided, it is used for
+        likelihood; impact falls back to assetValue alone (T_impact = 1.0).
+
+
+        Breakpoints default to NIST 800-30 Table D-2 quantitative ranges:
+        Very Low [0, 0.05), Low [0.05, 0.21), Moderate [0.21, 0.80),
+        High [0.80, 0.96), Very High [0.96, 1.0].
+
+
+        The 5×5 risk determination matrix follows NIST 800-30 Table I-2
+        and is included in the response for presentation purposes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NistRiskMatrixRequest"
+            examples:
+              preComputedValues:
+                summary: "Pre-computed likelihood and impact"
+                value:
+                  likelihood: 0.35
+                  impact: 0.25
+              rskComponentsDual:
+                summary: "RSK components with HAM533 dual-dimension threat"
+                value:
+                  threatProbability: 0.2667
+                  threatImpact: 0.4444
+                  vulnerability: 0.4092
+                  controlEfficacy: 0.40625
+                  assetValue: 0.2647
+              rskComponentsSingle:
+                summary: "RSK components with single threat scalar (T_impact defaults to 1.0)"
+                value:
+                  threatPotential: 0.2667
+                  vulnerability: 0.4092
+                  controlEfficacy: 0.40625
+                  assetValue: 0.2647
+              rawIapInputs:
+                summary: "Derived from raw IAP assessment inputs (HAM533 auto-produces both dimensions)"
+                value:
+                  threat:
+                    history: 3
+                    access: 2
+                    means: 2
+                  vulnerability:
+                    capabilities: 2
+                    resources: 2
+                    visibility: 2
+                    confidentiality: 2
+                    integrity: 1
+                    availability: 2
+                  control:
+                    controls:
+                      - implemented: 0.75
+                        correction: 0.50
+                      - implemented: 0.90
+                        correction: 0.80
+                  asset:
+                    classification: 2
+                    users: 3
+                    highValueData: [true, false, true, false, true, false]
+      responses:
+        "200":
+          description: NIST risk matrix assessment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NistRiskMatrixResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   # -----------------------------------------------------------------------
   # RSK/VM — Vulnerability Mode
@@ -1363,3 +1469,239 @@ components:
                   type: number
                 highValueMax:
                   type: number
+
+    # --- NIST Risk Matrix ---
+    NistRiskMatrixRequest:
+      type: object
+      description: >
+        Accepts EITHER pre-computed likelihood/impact (0–1), OR RSK component
+        factors with HAM533 dual-dimension threat assessment, OR raw IAP inputs.
+
+
+        HAM533 produces two threat dimensions:
+        - probability (H×A×M/45) — H is the actuarial estimate of threat frequency
+        - impact (5×A×M/45) — H is set to max (certainty: what happens if threat succeeds)
+
+
+        Derivation from components:
+        - likelihood = threatProbability × V × (1 − C)
+        - impact = threatImpact × A
+
+
+        If a single threatPotential scalar is provided instead of the dual
+        values, it is used for likelihood and threatImpact defaults to 1.0
+        (impact = A alone).
+      properties:
+        likelihood:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: >
+            Pre-computed overall likelihood (0–1). Overrides component-based
+            calculation. Represents probability of threat occurrence AND
+            successful exploitation, adjusted for controls.
+        impact:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: >
+            Pre-computed overall impact magnitude (0–1). Overrides component-based
+            calculation. Represents normalized harm severity.
+        threatProbability:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: >
+            T_probability — actuarial threat probability (0–1).
+            From HAM533: H×A×M/45 where H is the historical frequency estimate.
+            Used for the LIKELIHOOD axis.
+        threatImpact:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: >
+            T_impact — threat impact given occurrence (0–1).
+            From HAM533: 5×A×M/45 where H is set to max (certainty).
+            Used for the IMPACT axis.
+        threatPotential:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: >
+            Legacy single scalar — used for likelihood when threatProbability
+            is not provided. When used, threatImpact defaults to 1.0.
+        vulnerability:
+          description: "V — vulnerability exposure (0–1, e.g. from CRVE3) or raw CRVE3 inputs"
+          oneOf:
+            - type: number
+              minimum: 0
+              maximum: 1
+            - $ref: "#/components/schemas/Crve3Request"
+        controlEfficacy:
+          description: "C — control efficacy (0–1, e.g. from SCEP) or raw SCEP inputs"
+          oneOf:
+            - type: number
+              minimum: 0
+              maximum: 1
+            - $ref: "#/components/schemas/ScepRequest"
+        assetValue:
+          description: "A — asset value (0–1, e.g. from AsrValuation) or raw AsrValuation inputs"
+          oneOf:
+            - type: number
+              minimum: 0
+              maximum: 1
+            - $ref: "#/components/schemas/AssetValuationRequest"
+        threat:
+          description: >
+            Raw HAM533 inputs — produces BOTH threatProbability and
+            threatImpact automatically from the dual-dimension model.
+          $ref: "#/components/schemas/Ham533Request"
+        asset:
+          description: "Raw AsrValuation inputs — used to compute assetValue"
+          $ref: "#/components/schemas/AssetValuationRequest"
+        control:
+          description: "Raw SCEP inputs — used to compute controlEfficacy"
+          $ref: "#/components/schemas/ScepRequest"
+        likelihoodBreakpoints:
+          type: array
+          items:
+            type: number
+          minItems: 4
+          maxItems: 4
+          default: [0.05, 0.21, 0.80, 0.96]
+          description: >
+            Four breakpoints dividing likelihood into 5 NIST levels.
+            Defaults from NIST 800-30 Table D-2 quantitative assessment scale:
+            Very Low [0, 0.05), Low [0.05, 0.21), Moderate [0.21, 0.80),
+            High [0.80, 0.96), Very High [0.96, 1.0].
+        impactBreakpoints:
+          type: array
+          items:
+            type: number
+          minItems: 4
+          maxItems: 4
+          default: [0.05, 0.21, 0.80, 0.96]
+          description: >
+            Four breakpoints dividing impact into 5 NIST levels.
+            Defaults mirror likelihood breakpoints, applied to normalized
+            asset value. Customize for domain-specific impact scales.
+
+    NistQualitativeLevel:
+      type: object
+      required: [value, level, semiQuantitative]
+      properties:
+        value:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: "RSK probability value (0–1)"
+        level:
+          type: string
+          enum: [Very Low, Low, Moderate, High, Very High]
+          description: "NIST qualitative risk level"
+        semiQuantitative:
+          type: integer
+          description: >
+            NIST semi-quantitative value.
+            Likelihood: VL=0, L=2, M=5, H=8, VH=10.
+            Impact: VL=0, L=2, M=10, H=50, VH=100.
+
+    NistRiskMatrixResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [likelihood, impact, risk, matrix]
+          properties:
+            likelihood:
+              $ref: "#/components/schemas/NistQualitativeLevel"
+            impact:
+              $ref: "#/components/schemas/NistQualitativeLevel"
+            risk:
+              type: object
+              required: [level, score]
+              properties:
+                level:
+                  type: string
+                  enum: [Very Low, Low, Moderate, High, Very High]
+                  description: "Overall risk level from NIST 800-30 Table I-2"
+                score:
+                  type: integer
+                  description: >
+                    Semi-quantitative risk score =
+                    likelihood.semiQuantitative × impact.semiQuantitative
+                position:
+                  type: object
+                  description: "Zero-based position in the 5×5 matrix"
+                  properties:
+                    row:
+                      type: integer
+                      description: "Likelihood row (0=Very High, 4=Very Low)"
+                    column:
+                      type: integer
+                      description: "Impact column (0=Very Low, 4=Very High)"
+            matrix:
+              type: object
+              description: >
+                The full NIST 800-30 Table I-2 risk determination matrix
+                included for presentation / rendering purposes.
+              properties:
+                levels:
+                  type: array
+                  items:
+                    type: string
+                  description: "Ordered level names: [Very Low, Low, Moderate, High, Very High]"
+                likelihoodAxis:
+                  type: array
+                  items:
+                    type: string
+                  description: "Row labels top-to-bottom: [Very High, High, Moderate, Low, Very Low]"
+                impactAxis:
+                  type: array
+                  items:
+                    type: string
+                  description: "Column labels left-to-right: [Very Low, Low, Moderate, High, Very High]"
+                cells:
+                  type: array
+                  items:
+                    type: array
+                    items:
+                      type: string
+                  description: >
+                    5×5 grid of qualitative risk levels. Rows: likelihood
+                    (Very High → Very Low). Columns: impact (Very Low → Very High).
+            components:
+              type: object
+              description: "RSK component values used (when computed from components/IAPs)"
+              properties:
+                threatProbability:
+                  type: number
+                  description: "T_probability — actuarial threat probability (H×A×M/45)"
+                threatImpact:
+                  type: number
+                  description: "T_impact — threat impact given occurrence (5×A×M/45)"
+                vulnerability:
+                  type: number
+                controlEfficacy:
+                  type: number
+                assetValue:
+                  type: number
+                derivedLikelihood:
+                  type: number
+                  description: "T_probability × V × (1 − C)"
+                derivedImpact:
+                  type: number
+                  description: "T_impact × A"
+            breakpoints:
+              type: object
+              description: "Breakpoints used for the qualitative mapping"
+              properties:
+                likelihood:
+                  type: array
+                  items:
+                    type: number
+                impact:
+                  type: array
+                  items:
+                    type: number

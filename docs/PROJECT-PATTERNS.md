@@ -178,6 +178,66 @@ Aggregate efficacy: $\min(1,\ f(\text{effectives}, a=4))$ using the RSK aggregat
 
 ## Engine Functions
 
+---
+
+## NIST SP 800-30 Risk Matrix Integration
+
+The STORM API provides a standards-aligned endpoint that maps RSK quantitative
+measurements to the NIST SP 800-30 Rev 1 qualitative risk determination matrix.
+
+### Dual-Dimension Threat Assessment
+
+HAM533 produces two distinct threat outputs that map directly to the NIST 5×5
+matrix axes. This is the key insight linking RSK to NIST:
+
+| HAM533 Output | Formula | H Value | Maps To |
+|---------------|---------|---------|---------|
+| **probability** | $H \times A \times M / 45$ | Actuarial (1–5) | **Likelihood** axis |
+| **impact** | $5 \times A \times M / 45$ | Max (certainty) | **Impact** axis |
+
+- **Likelihood** (probability of adverse event): $T_{probability} \times V \times (1 - C)$
+- **Impact** (severity if event occurs): $T_{impact} \times A$
+
+### Qualitative Mapping (NIST 800-30 Table D-2)
+
+Default breakpoints for mapping RSK probabilities (0–1) to NIST qualitative levels:
+
+| Level | Range | Semi-Quant. (Likelihood) | Semi-Quant. (Impact) |
+|-------|-------|--------------------------|---------------------|
+| Very Low | [0, 0.05) | 0 | 0 |
+| Low | [0.05, 0.21) | 2 | 2 |
+| Moderate | [0.21, 0.80) | 5 | 10 |
+| High | [0.80, 0.96) | 8 | 50 |
+| Very High | [0.96, 1.0] | 10 | 100 |
+
+Breakpoints are configurable per-request to adapt to domain-specific risk
+scales (e.g., financial risk may use different impact thresholds than
+cybersecurity, operational safety, or reputational risk).
+
+### Risk Determination Matrix (NIST 800-30 Table I-2)
+
+The 5×5 grid of qualitative risk levels (likelihood rows × impact columns)
+is included in every response for presentation rendering:
+
+|  | VL Impact | L Impact | M Impact | H Impact | VH Impact |
+|---|---|---|---|---|---|
+| **VH Likelihood** | Very Low | Low | Moderate | High | Very High |
+| **H Likelihood** | Very Low | Low | Moderate | High | Very High |
+| **M Likelihood** | Very Low | Low | Moderate | Moderate | High |
+| **L Likelihood** | Very Low | Low | Low | Low | Moderate |
+| **VL Likelihood** | Very Low | Very Low | Very Low | Low | Low |
+
+### Domain Agnosticism
+
+Because STORM assesses all forms of risk (not just technology), the NIST
+matrix endpoint accepts custom breakpoints. The same engine produces
+NIST-compliant matrices for cybersecurity, financial, operational, strategic,
+or any other risk domain — the qualitative mapping changes, the math does not.
+
+---
+
+## Engine Functions
+
 All engine functions are **pure** (no side effects, no I/O):
 
 | Function | Input | Output |
@@ -191,6 +251,7 @@ All engine functions are **pure** (no side effects, no I/O):
 | `assetValuation` | classification, users, highValueData[] | { assetValue, assetShare } |
 | `singleLossExpectancy` | asset, vulnerability, controlEfficacy | SLE |
 | `distributedLossExpectancy` | asset, threat, vulnerability, controlEfficacy | DLE |
+| `nistRiskMatrix` | likelihood/impact (or components/IAPs), breakpoints | { likelihood, impact, risk, matrix } |
 | `computeScore` | measurements[], configuration | { raw, normalized, rating } |
 
 ---
