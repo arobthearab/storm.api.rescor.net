@@ -1,0 +1,28 @@
+{
+  "name": "storm.api.rescor.net",
+  "version": "0.1.0",
+  "description": "STORM Risk Computation Engine — stateless RSK/VM, RSK/RM, IAP, and NIST risk-matrix API",
+  "type": "module",
+  "main": "src/index.mjs",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "dev": "node --watch src/index.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@rescor/core-auth": "file:../core.rescor.net/packages/core-auth",
+    "@rescor/core-config": "file:../core.rescor.net/packages/core-config",
+    "@rescor/core-db": "file:../core.rescor.net/packages/core-db",
+    "@rescor/core-utils": "file:../core.rescor.net/packages/core-utils",
+    "better-sqlite3": "^11.7.0",
+    "express": "^4.21.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
