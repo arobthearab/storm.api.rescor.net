@@ -1,0 +1,1365 @@
+openapi: 3.1.0
+info:
+  title: STORM API
+  version: 1.0.0
+  description: >
+    Stateless computation engine implementing the RSK risk measurement process
+    (Paper-RSK-NDA-V9.1, A. T. Robinson, NMI LLC).
+    Supports RSK Vulnerability Mode (RSK/VM) and RSK Risk Mode (RSK/RM)
+    with Independent Ancillary Processes (HAM533, CRVE3, SCEP, AsrValuation).
+
+    All measurements are expressed in Risk Units (RU). A larger measurement
+    indicates greater risk.
+  contact:
+    name: RESCOR LLC
+    url: https://rescor.net
+  license:
+    name: Proprietary
+    identifier: LicenseRef-RESCOR
+
+servers:
+  - url: http://localhost:3200
+    description: Local development
+  - url: https://storm.api.rescor.net
+    description: Production
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: RSK/VM
+    description: >
+      RSK Vulnerability Mode — composite measurements from risk factor vectors.
+      Assumes equal asset value, single hostile threat agent, 100% exploit capability.
+  - name: RSK/RM
+    description: >
+      RSK Risk Mode — full A-T-V-C risk assessment with loss expectancy.
+      Adjusts base measurements by confidence, asset value, and threat potential.
+  - name: IAP
+    description: >
+      Independent Ancillary Processes — self-contained assessments producing
+      normalized 0–1 factors for RSK/RM (HAM533, CRVE3, SCEP, AsrValuation).
+  - name: Health
+    description: Operational health and configuration endpoints
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+paths:
+
+  # -----------------------------------------------------------------------
+  # Health
+  # -----------------------------------------------------------------------
+  /health:
+    get:
+      operationId: getHealth
+      tags: [Health]
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /v1/openapi.yaml:
+    get:
+      operationId: getOpenApiSpec
+      tags: [Health]
+      summary: OpenAPI specification
+      security: []
+      responses:
+        "200":
+          description: YAML OpenAPI document
+          content:
+            application/x-yaml:
+              schema:
+                type: string
+
+  # -----------------------------------------------------------------------
+  # RSK/VM — Vulnerability Mode
+  # -----------------------------------------------------------------------
+  /v1/rsk/vm/aggregate:
+    post:
+      operationId: rskVmAggregate
+      tags: [RSK/VM]
+      summary: Composite measurement (diminishing-returns aggregate)
+      description: >
+        Computes the composite RSK measurement h = ⌈Σ V_j / a^j⌉ where V is
+        sorted descending and a is the scaling base. Implements the mathematical
+        model from Paper-RSK-NDA-V9.1 §XIII.H.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AggregateRequest"
+            examples:
+              caseStudyHost0:
+                summary: "White paper host 0: {20, 5, 5, 5} → 22 RU"
+                value:
+                  measurements: [20, 5, 5, 5]
+                  scalingBase: 4
+              caseStudyHost2:
+                summary: "White paper host 2: {40, 10, 5, 5, 5, 5, 5, 5} → 43 RU"
+                value:
+                  measurements: [40, 10, 5, 5, 5, 5, 5, 5]
+                  scalingBase: 4
+              caseStudyHorizon:
+                summary: "White paper horizon: → 63 RU"
+                value:
+                  measurements: [50, 40, 40, 20, 20, 10, 10, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
+                  scalingBase: 4
+      responses:
+        "200":
+          description: Aggregate measurement in RU
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AggregateResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/rsk/vm/add:
+    post:
+      operationId: rskVmAdd
+      tags: [RSK/VM]
+      summary: Add a base measurement to a measurement vector
+      description: >
+        Inserts a new risk factor base measurement into an existing measurement
+        vector and returns the updated aggregate. The measurement must be between
+        v_min and v_max. The vector is re-sorted descending before aggregation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddMeasurementRequest"
+            examples:
+              addToHost:
+                summary: "Add VID 1242 (30 RU) to host 0 vector"
+                value:
+                  measurements: [20, 5, 5, 5]
+                  measurement: 30
+                  scalingBase: 4
+      responses:
+        "200":
+          description: Updated vector and aggregate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AddMeasurementResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/rsk/vm/normalize:
+    post:
+      operationId: rskVmNormalize
+      tags: [RSK/VM]
+      summary: Normalize a raw measurement to 0–100
+      description: >
+        Scales a raw composite measurement to a 0–100 range using the theoretical
+        upper bound: upperBound = v_max / (1 - 1/a). With defaults (v_max=100,
+        a=4), upperBound = 134.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NormalizeRequest"
+            examples:
+              normalizeHost2:
+                summary: "Normalize 43 RU → ~32.09"
+                value:
+                  raw: 43
+                  maximumValue: 100
+                  scalingBase: 4
+      responses:
+        "200":
+          description: Normalized value (0–100)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NormalizeResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/rsk/vm/rate:
+    post:
+      operationId: rskVmRate
+      tags: [RSK/VM]
+      summary: Rate a measurement against relative risk levels
+      description: >
+        Maps a composite measurement (in RU) to a relative risk level from
+        Paper-RSK-NDA-V9.1 Tables IA and IB. Supports both the standard 5-level
+        scale and the alternate 3-level scale.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RateRequest"
+            examples:
+              rateHost0:
+                summary: "22 RU → Low (Table IA)"
+                value:
+                  measurement: 22
+              rateHost2:
+                summary: "43 RU → Moderate (Table IA)"
+                value:
+                  measurement: 43
+              rateHost4:
+                summary: "50 RU → High (Table IA)"
+                value:
+                  measurement: 50
+              rateAlternate:
+                summary: "43 RU → Medium (Table IB alternate scale)"
+                value:
+                  measurement: 43
+                  scale: alternate
+      responses:
+        "200":
+          description: Risk level rating
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/rsk/vm/score:
+    post:
+      operationId: rskVmScore
+      tags: [RSK/VM]
+      summary: Full RSK/VM pipeline (aggregate → normalize → rate)
+      description: >
+        Composite endpoint that runs the full RSK/VM measurement pipeline:
+        aggregate the measurement vector, normalize to 0–100, and assign a
+        relative risk level. Returns all intermediate results.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScoreRequest"
+            examples:
+              caseStudyNetwork:
+                summary: "Full pipeline for white paper host 2"
+                value:
+                  measurements: [40, 10, 5, 5, 5, 5, 5, 5]
+                  scalingBase: 4
+                  maximumValue: 100
+      responses:
+        "200":
+          description: Complete scoring result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScoreResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/rsk/vm/limit:
+    post:
+      operationId: rskVmLimit
+      tags: [RSK/VM]
+      summary: Calculate theoretical upper bound
+      description: >
+        Computes the theoretical upper bound of the composite measurement:
+        upperBound = ⌈v_max / (1 - 1/a)⌉. With defaults, this is 134 RU.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LimitRequest"
+            examples:
+              defaultParams:
+                summary: "v_max=100, a=4 → 134"
+                value:
+                  maximumValue: 100
+                  scalingBase: 4
+      responses:
+        "200":
+          description: Upper bound value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LimitResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # -----------------------------------------------------------------------
+  # RSK/RM — Risk Mode
+  # -----------------------------------------------------------------------
+  /v1/rsk/rm/adjust:
+    post:
+      operationId: rskRmAdjust
+      tags: [RSK/RM]
+      summary: Adjust base measurements by C, V, T factors
+      description: >
+        Applies the RSK/RM adjustment formula: v_i = C_i × V_ai × T_pi × b_i
+        to each risk factor in a vector. Finding confidence C, asset value V_a,
+        and threat potential T_p are per-factor or global.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdjustRequest"
+            examples:
+              caseStudyHost1_117:
+                summary: "White paper Table V: host 192.168.1.117, VID 563"
+                value:
+                  riskFactors:
+                    - baseMeasurement: 100
+                      confidence: 0.90
+                      assetValue: 0.75
+                      threatPotential: 0.9
+                  scalingBase: 4
+      responses:
+        "200":
+          description: Adjusted measurements and aggregate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdjustResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/rsk/rm/sle:
+    post:
+      operationId: rskRmSingleLossExpectancy
+      tags: [RSK/RM]
+      summary: Single Loss Expectancy
+      description: >
+        Calculates SLE = A × 1 × V × (1 - C) where A is asset value,
+        V is vulnerability exposure, and C is control efficacy.
+        Threat is assumed to be 1 (single occurrence).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SleRequest"
+      responses:
+        "200":
+          description: SLE value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LossExpectancyResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/rsk/rm/dle:
+    post:
+      operationId: rskRmDistributedLossExpectancy
+      tags: [RSK/RM]
+      summary: Distributed Loss Expectancy
+      description: >
+        Calculates DLE = A × T × V × (1 - C) where A is asset value,
+        T is threat potential, V is vulnerability exposure, and C is control efficacy.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DleRequest"
+      responses:
+        "200":
+          description: DLE value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LossExpectancyResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/rsk/rm/assess:
+    post:
+      operationId: rskRmAssess
+      tags: [RSK/RM]
+      summary: Full RSK/RM risk assessment
+      description: >
+        Runs a complete RSK/RM assessment: accepts raw IAP factor inputs
+        (or pre-computed factor values), adjusts base measurements, computes
+        composite measurement, and calculates SLE/DLE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssessRequest"
+      responses:
+        "200":
+          description: Full risk assessment result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssessResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # -----------------------------------------------------------------------
+  # IAP — Independent Ancillary Processes
+  # -----------------------------------------------------------------------
+  /v1/iap/ham533:
+    post:
+      operationId: iapHam533
+      tags: [IAP]
+      summary: "HAM533 — Threat potential assessment"
+      description: >
+        History × Access × Means model. Factor scale maximums: H=5, A=3, M=3
+        (hence "533"). Returns probability and impact as 0–1 values.
+        probability = H×A×M / 45; impact = 5×A×M / 45.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Ham533Request"
+            examples:
+              moderate:
+                summary: "H=3, A=2, M=2 → probability ≈ 0.267"
+                value:
+                  history: 3
+                  access: 2
+                  means: 2
+              maximum:
+                summary: "H=5, A=3, M=3 → probability = 1.0"
+                value:
+                  history: 5
+                  access: 3
+                  means: 3
+      responses:
+        "200":
+          description: Threat assessment result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ham533Response"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/iap/crve3:
+    post:
+      operationId: iapCrve3
+      tags: [IAP]
+      summary: "CRVE3 — Vulnerability exposure assessment"
+      description: >
+        Capabilities × Resources × Visibility (basic, max 27) with
+        Confidentiality, Integrity, Availability exposure (diminishing aggregate).
+        Returns normalized exposure value (0–1).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Crve3Request"
+            examples:
+              moderate:
+                summary: "Mid-range exposure"
+                value:
+                  capabilities: 2
+                  resources: 2
+                  visibility: 2
+                  confidentiality: 2
+                  integrity: 1
+                  availability: 2
+      responses:
+        "200":
+          description: Vulnerability exposure result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Crve3Response"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/iap/scep:
+    post:
+      operationId: iapScep
+      tags: [IAP]
+      summary: "SCEP — Control efficacy assessment"
+      description: >
+        Evaluates aggregate control efficacy from a vector of controls, each
+        with implemented (0–1) and correction (0–1) factors.
+        Per-control effective = implemented × correction.
+        Aggregate efficacy = min(1, rskAggregate(effectives, a=4)).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScepRequest"
+            examples:
+              twoControls:
+                summary: "Two controls: 75%/50% and 90%/80%"
+                value:
+                  controls:
+                    - implemented: 0.75
+                      correction: 0.50
+                    - implemented: 0.90
+                      correction: 0.80
+      responses:
+        "200":
+          description: Control efficacy result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScepResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/iap/asset-valuation:
+    post:
+      operationId: iapAssetValuation
+      tags: [IAP]
+      summary: "AsrValuation — Asset value assessment"
+      description: >
+        Calculates asset value from classification (1–3), users (1–5), and
+        high-value data categories (6 boolean categories). Returns normalized
+        asset value (0–1).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssetValuationRequest"
+            examples:
+              moderate:
+                summary: "Classification 2, Users 3, 3 HV categories"
+                value:
+                  classification: 2
+                  users: 3
+                  highValueData:
+                    - true
+                    - false
+                    - true
+                    - false
+                    - true
+                    - false
+      responses:
+        "200":
+          description: Asset valuation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssetValuationResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+# ---------------------------------------------------------------------------
+# Components
+# ---------------------------------------------------------------------------
+components:
+
+  # -----------------------------------------------------------------------
+  # Security Schemes
+  # -----------------------------------------------------------------------
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        OAuth 2.0 / OIDC JWT bearer token. Token must contain `roles` claim
+        for RBAC. See docs/SECURITY.md.
+    oauth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize
+          tokenUrl: https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token
+          scopes:
+            storm.read: Read-only computation access
+            storm.write: Full computation access
+        clientCredentials:
+          tokenUrl: https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token
+          scopes:
+            storm.read: Read-only computation access
+            storm.write: Full computation access
+
+  # -----------------------------------------------------------------------
+  # Reusable Responses
+  # -----------------------------------------------------------------------
+  responses:
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: "scalingBase must be a positive number"
+              details:
+                - field: scalingBase
+                  constraint: positive
+                  received: -1
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: "Missing or invalid bearer token"
+
+  # -----------------------------------------------------------------------
+  # Schemas
+  # -----------------------------------------------------------------------
+  schemas:
+
+    # --- Health ---
+    HealthResponse:
+      type: object
+      required: [status, version, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [healthy]
+        version:
+          type: string
+          example: "1.0.0"
+        timestamp:
+          type: string
+          format: date-time
+
+    # --- Error ---
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  constraint:
+                    type: string
+                  received: {}
+
+    # --- RSK/VM Aggregate ---
+    AggregateRequest:
+      type: object
+      required: [measurements]
+      properties:
+        measurements:
+          type: array
+          items:
+            type: number
+            minimum: 0
+          minItems: 1
+          description: >
+            Risk factor measurements (v_min to v_max). Need not be sorted;
+            the engine sorts descending before aggregation.
+        scalingBase:
+          type: number
+          minimum: 1
+          exclusiveMinimum: true
+          default: 4
+          description: >
+            Divisor base (a) controlling diminishing returns.
+            Paper default: 4.
+
+    AggregateResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [aggregate, measurements, scalingBase]
+          properties:
+            aggregate:
+              type: integer
+              description: "Composite measurement h = ⌈Σ V_j / a^j⌉ (in RU)"
+            measurements:
+              type: array
+              items:
+                type: number
+              description: "Input measurements sorted descending"
+            scalingBase:
+              type: number
+            upperBound:
+              type: number
+              description: "Theoretical upper bound: v_max / (1 - 1/a)"
+
+    # --- RSK/VM Add ---
+    AddMeasurementRequest:
+      type: object
+      required: [measurements, measurement]
+      properties:
+        measurements:
+          type: array
+          items:
+            type: number
+          description: "Existing measurement vector"
+        measurement:
+          type: number
+          minimum: 0
+          description: >
+            New risk factor base measurement to add (between v_min and v_max)
+        scalingBase:
+          type: number
+          minimum: 1
+          exclusiveMinimum: true
+          default: 4
+        minimumValue:
+          type: number
+          default: 1
+          description: "v_min — minimum valid base measurement"
+        maximumValue:
+          type: number
+          default: 100
+          description: "v_max — maximum valid base measurement"
+
+    AddMeasurementResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [aggregate, measurements]
+          properties:
+            aggregate:
+              type: integer
+              description: "Updated composite measurement (in RU)"
+            measurements:
+              type: array
+              items:
+                type: number
+              description: "Updated vector sorted descending"
+            previousAggregate:
+              type: integer
+              description: "Aggregate before adding the new measurement"
+
+    # --- RSK/VM Normalize ---
+    NormalizeRequest:
+      type: object
+      required: [raw]
+      properties:
+        raw:
+          type: number
+          minimum: 0
+          description: "Raw composite measurement (in RU)"
+        maximumValue:
+          type: number
+          default: 100
+          description: "v_max used to calculate the theoretical upper bound"
+        scalingBase:
+          type: number
+          default: 4
+          description: "Scaling base used to calculate the theoretical upper bound"
+
+    NormalizeResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [normalized, raw, upperBound]
+          properties:
+            normalized:
+              type: number
+              minimum: 0
+              maximum: 100
+              description: "Normalized value: min(100, raw / upperBound × 100)"
+            raw:
+              type: number
+            upperBound:
+              type: number
+
+    # --- RSK/VM Rate ---
+    RateRequest:
+      type: object
+      required: [measurement]
+      properties:
+        measurement:
+          type: integer
+          minimum: 0
+          description: "Composite measurement in RU"
+        scale:
+          type: string
+          enum: [standard, alternate]
+          default: standard
+          description: >
+            "standard" = Table IA (Low/Moderate/High/Very High/Extreme).
+            "alternate" = Table IB (Low/Medium/High).
+        thresholds:
+          type: array
+          items:
+            type: number
+          description: "Custom RU breakpoints (overrides scale selection)"
+        labels:
+          type: array
+          items:
+            type: string
+          description: "Custom labels (must be thresholds.length + 1)"
+
+    RateResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [rating, measurement]
+          properties:
+            rating:
+              type: string
+              description: "Relative risk level label"
+            measurement:
+              type: integer
+            thresholds:
+              type: array
+              items:
+                type: number
+            labels:
+              type: array
+              items:
+                type: string
+
+    # --- RSK/VM Score (composite pipeline) ---
+    ScoreRequest:
+      type: object
+      required: [measurements]
+      properties:
+        measurements:
+          type: array
+          items:
+            type: number
+          minItems: 1
+        scalingBase:
+          type: number
+          default: 4
+        maximumValue:
+          type: number
+          default: 100
+        scale:
+          type: string
+          enum: [standard, alternate]
+          default: standard
+        precision:
+          type: integer
+          minimum: 0
+          description: "Decimal places for normalized value (null = full precision)"
+
+    ScoreResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [aggregate, normalized, rating, measurements]
+          properties:
+            aggregate:
+              type: integer
+              description: "Composite measurement (in RU)"
+            normalized:
+              type: number
+              description: "Normalized to 0–100"
+            rating:
+              type: string
+              description: "Relative risk level"
+            measurements:
+              type: array
+              items:
+                type: number
+              description: "Input sorted descending"
+            upperBound:
+              type: number
+            scalingBase:
+              type: number
+            maximumValue:
+              type: number
+
+    # --- RSK/VM Limit ---
+    LimitRequest:
+      type: object
+      properties:
+        maximumValue:
+          type: number
+          default: 100
+        scalingBase:
+          type: number
+          default: 4
+
+    LimitResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [upperBound]
+          properties:
+            upperBound:
+              type: integer
+              description: "⌈v_max / (1 - 1/a)⌉"
+            maximumValue:
+              type: number
+            scalingBase:
+              type: number
+
+    # --- RSK/RM Adjust ---
+    RiskFactor:
+      type: object
+      required: [baseMeasurement]
+      properties:
+        baseMeasurement:
+          type: number
+          description: "Base RSK measurement (b_i) from risk factor database"
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 1
+          description: "C_i — probability the vulnerability exists"
+        assetValue:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 1
+          description: "V_ai — percentage of organization's total value"
+        threatPotential:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 1
+          description: "T_pi — probability threat will be realized"
+
+    AdjustRequest:
+      type: object
+      required: [riskFactors]
+      properties:
+        riskFactors:
+          type: array
+          items:
+            $ref: "#/components/schemas/RiskFactor"
+          minItems: 1
+        scalingBase:
+          type: number
+          default: 4
+
+    AdjustResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [aggregate, adjustedMeasurements]
+          properties:
+            aggregate:
+              type: integer
+              description: "Composite measurement from adjusted values"
+            adjustedMeasurements:
+              type: array
+              items:
+                type: number
+              description: "Each v_i = C × V_a × T_p × b sorted descending"
+            riskFactors:
+              type: array
+              items:
+                $ref: "#/components/schemas/RiskFactor"
+
+    # --- RSK/RM Loss Expectancy ---
+    SleRequest:
+      type: object
+      required: [assetValue, vulnerability, controlEfficacy]
+      properties:
+        assetValue:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: "A — normalized asset value (0–1)"
+        vulnerability:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: "V — normalized vulnerability exposure (0–1)"
+        controlEfficacy:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: "C — aggregate control efficacy (0–1)"
+
+    DleRequest:
+      type: object
+      required: [assetValue, threatPotential, vulnerability, controlEfficacy]
+      properties:
+        assetValue:
+          type: number
+          minimum: 0
+          maximum: 1
+        threatPotential:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: "T — threat potential probability (0–1)"
+        vulnerability:
+          type: number
+          minimum: 0
+          maximum: 1
+        controlEfficacy:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    LossExpectancyResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [value]
+          properties:
+            value:
+              type: number
+              description: "Loss expectancy (0–1)"
+            formula:
+              type: string
+              description: "Human-readable formula used"
+            components:
+              type: object
+              properties:
+                assetValue:
+                  type: number
+                threatPotential:
+                  type: number
+                vulnerability:
+                  type: number
+                controlEfficacy:
+                  type: number
+
+    # --- RSK/RM Assess (full pipeline) ---
+    AssessRequest:
+      type: object
+      required: [riskFactors]
+      properties:
+        riskFactors:
+          type: array
+          items:
+            $ref: "#/components/schemas/RiskFactor"
+          minItems: 1
+        asset:
+          description: "Pre-computed (number 0–1) or raw IAP inputs"
+          oneOf:
+            - type: number
+              minimum: 0
+              maximum: 1
+            - $ref: "#/components/schemas/AssetValuationRequest"
+        threat:
+          description: "Pre-computed (number 0–1) or raw IAP inputs"
+          oneOf:
+            - type: number
+              minimum: 0
+              maximum: 1
+            - $ref: "#/components/schemas/Ham533Request"
+        vulnerability:
+          description: "Pre-computed (number 0–1) or raw IAP inputs"
+          oneOf:
+            - type: number
+              minimum: 0
+              maximum: 1
+            - $ref: "#/components/schemas/Crve3Request"
+        control:
+          description: "Pre-computed (number 0–1) or raw IAP inputs"
+          oneOf:
+            - type: number
+              minimum: 0
+              maximum: 1
+            - $ref: "#/components/schemas/ScepRequest"
+        scalingBase:
+          type: number
+          default: 4
+        maximumValue:
+          type: number
+          default: 100
+
+    AssessResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [aggregate, sle, dle, factors]
+          properties:
+            aggregate:
+              type: integer
+              description: "RSK/RM composite measurement (RU)"
+            normalized:
+              type: number
+              description: "Normalized 0–100"
+            rating:
+              type: string
+            sle:
+              type: number
+              description: "Single Loss Expectancy"
+            dle:
+              type: number
+              description: "Distributed Loss Expectancy"
+            factors:
+              type: object
+              properties:
+                assetValue:
+                  type: number
+                threatPotential:
+                  type: number
+                vulnerability:
+                  type: number
+                controlEfficacy:
+                  type: number
+            adjustedMeasurements:
+              type: array
+              items:
+                type: number
+
+    # --- IAP: HAM533 ---
+    Ham533Request:
+      type: object
+      required: [history, access, means]
+      properties:
+        history:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: "Historical occurrence of the threat (1=rare, 5=frequent)"
+        access:
+          type: integer
+          minimum: 1
+          maximum: 3
+          description: "Threat proximity to assets (1=remote, 3=direct)"
+        means:
+          type: integer
+          minimum: 1
+          maximum: 3
+          description: "Threat resources and capabilities (1=limited, 3=extensive)"
+
+    Ham533Response:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [probability, impact]
+          properties:
+            probability:
+              type: number
+              minimum: 0
+              maximum: 1
+              description: "H×A×M / 45"
+            impact:
+              type: number
+              minimum: 0
+              maximum: 1
+              description: "5×A×M / 45"
+            factors:
+              type: object
+              properties:
+                history:
+                  type: integer
+                access:
+                  type: integer
+                means:
+                  type: integer
+                product:
+                  type: integer
+                  description: "H × A × M"
+
+    # --- IAP: CRVE3 ---
+    Crve3Request:
+      type: object
+      required: [capabilities, resources, visibility, confidentiality, integrity, availability]
+      properties:
+        capabilities:
+          type: integer
+          minimum: 1
+          maximum: 3
+          description: "Threat actor's capabilities (1=low, 3=high)"
+        resources:
+          type: integer
+          minimum: 1
+          maximum: 3
+          description: "Threat actor's resources (1=limited, 3=extensive)"
+        visibility:
+          type: integer
+          minimum: 1
+          maximum: 3
+          description: "Target visibility / attractiveness (1=low, 3=high)"
+        confidentiality:
+          type: integer
+          minimum: 1
+          maximum: 3
+          description: "Confidentiality exposure (1=low, 3=high)"
+        integrity:
+          type: integer
+          minimum: 1
+          maximum: 3
+          description: "Integrity exposure (1=low, 3=high)"
+        availability:
+          type: integer
+          minimum: 1
+          maximum: 3
+          description: "Availability exposure (1=low, 3=high)"
+
+    Crve3Response:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [exposure]
+          properties:
+            exposure:
+              type: number
+              minimum: 0
+              maximum: 1
+              description: "(cia × basic) / (ciaMax × basicMax)"
+            basic:
+              type: integer
+              description: "C × R × V (max 27)"
+            cia:
+              type: number
+              description: "Diminishing aggregate of C/I/A exposures"
+            ciaMax:
+              type: number
+              description: "rskAggregate([3,3,3], a=4) → 4"
+            basicMax:
+              type: integer
+              description: "3 × 3 × 3 = 27"
+
+    # --- IAP: SCEP ---
+    ScepControl:
+      type: object
+      required: [implemented, correction]
+      properties:
+        implemented:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: "Degree to which control is implemented (0–1)"
+        correction:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: "Degree to which control corrects the vulnerability (0–1)"
+
+    ScepRequest:
+      type: object
+      required: [controls]
+      properties:
+        controls:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScepControl"
+          minItems: 1
+
+    ScepResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [efficacy]
+          properties:
+            efficacy:
+              type: number
+              minimum: 0
+              maximum: 1
+              description: "min(1, rskAggregate(effectives, a=4))"
+            effectives:
+              type: array
+              items:
+                type: number
+              description: "Per-control: implemented × correction"
+
+    # --- IAP: AsrValuation ---
+    AssetValuationRequest:
+      type: object
+      required: [classification, users, highValueData]
+      properties:
+        classification:
+          type: integer
+          minimum: 1
+          maximum: 3
+          description: "Asset classification (1=public, 2=internal, 3=confidential)"
+        users:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: "Number of user categories (1=single user, 5=enterprise-wide)"
+        highValueData:
+          type: array
+          items:
+            type: boolean
+          minItems: 1
+          maxItems: 6
+          description: "6 boolean categories indicating presence of high-value data"
+
+    AssetValuationResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [assetValue]
+          properties:
+            assetValue:
+              type: number
+              minimum: 0
+              maximum: 1
+              description: "(classification × users × hvAggregate) / (3 × 5 × hvMax)"
+            components:
+              type: object
+              properties:
+                classification:
+                  type: integer
+                users:
+                  type: integer
+                highValueAggregate:
+                  type: number
+                highValueMax:
+                  type: number
