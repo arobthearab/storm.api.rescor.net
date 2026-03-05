@@ -276,6 +276,114 @@ or any other risk domain — the qualitative mapping changes, the math does not.
 
 ---
 
+## Measurement Lifecycle (MVP)
+
+### Session Model
+
+STORM measurements are **server-managed sessions** that hold a risk assessment's
+V-factor vector, hierarchy structure, and modifiers. The stateless computation
+functions (RSK/VM, IAP) remain available independently — the measurement
+lifecycle builds on top of them.
+
+| Operation | Endpoint | Description |
+|-----------|----------|-------------|
+| Create | `POST /v1/measurements` | Initialize measurement with hierarchy + config |
+| Retrieve | `GET /v1/measurements/:id` | Full hierarchy with computed aggregates |
+| Delete | `DELETE /v1/measurements/:id` | Remove measurement and all associated data |
+| Add factor | `POST /v1/measurements/:id/factors` | Add V-factor at a hierarchy position |
+| List factors | `GET /v1/measurements/:id/factors` | All factors with base, modifiers, effective |
+| Edit factor | `PATCH /v1/measurements/:id/factors/:fid` | Update value, label, or metadata |
+| Remove factor | `DELETE /v1/measurements/:id/factors/:fid` | Remove factor from vector |
+| Add modifier | `POST /v1/measurements/:id/factors/:fid/modifiers` | Attach modifier to a factor |
+| Remove modifier | `DELETE /v1/measurements/:id/modifiers/:mid` | Detach modifier from its factor |
+
+### Hierarchy Templates
+
+A **hierarchy** defines the grouping structure for V-factors. Factors are always
+added at the **leaf** (deepest) level; aggregate measurements roll upward
+through each level to the root.
+
+| Template | Levels | Use Case |
+|----------|--------|----------|
+| `default` | `[items]` | Flat list of vulnerability measurements |
+| `QSD` | `[questionnaire, section, question]` | Questionnaire-based risk assessment |
+| `THHFA` | `[test, horizon, host, finding, annotation]` | Security / penetration testing |
+
+**Custom hierarchies:** provide an array of 1–8 level names instead of a
+template name.
+
+Intermediate hierarchy nodes are **created automatically** when a factor
+specifies a `path` array (one label per grouping level above the leaf).
+With the default single-level hierarchy, no `path` is needed.
+
+**Example — THHFA (5 levels):**
+
+```
+POST /v1/measurements/:id/factors
+{
+  "path": ["External", "Internet", "192.168.1.117", "SQL Injection"],
+  "value": 1.0,
+  "label": "HTTP endpoint on port 80"
+}
+```
+
+Creates nodes: test/External → horizon/Internet → host/192.168.1.117 →
+finding/SQL Injection, with the annotation factor at the leaf.
+
+### Modifier Taxonomy
+
+> **⚠ CONFIDENTIAL — compound modifier aggregation uses the proprietary RSK function.**
+
+A **modifier** is any adjustment applied to a V-factor's base measurement.
+Modifiers are classified along two axes:
+
+**Effect** (direction of adjustment):
+- `attenuate` — reduces the effective measurement (risk mitigation)
+- `amplify` — increases the effective measurement (risk aggravation; reserved for future)
+
+**Application** (how multiple modifiers of the same type combine):
+- `direct` — each modifier multiplies independently
+- `compound` — values are aggregated using the RSK function, then applied once
+
+**Default modifier types:**
+
+| Type | Effect | Application | Semantics |
+|------|--------|-------------|-----------|
+| `confidence` | attenuate | direct | Probability the vulnerability exists |
+| `control` | attenuate | compound | Mitigation effectiveness (aggregated) |
+
+**Effective measurement computation (CONFIDENTIAL):**
+
+$$\text{effective} = \text{base} \times \prod(\text{direct attenuations}) \times (1 - \text{compound attenuation aggregate})$$
+
+**Example:**
+
+| Component | Value | Notes |
+|-----------|-------|-------|
+| Base measurement | 1.0 | Input V-factor |
+| Confidence | 0.75 | Direct attenuation |
+| Controls | [0.4, 0.3, 0.2] | Compound: $0.4 + 0.3/4 + 0.2/16 = 0.4875$ |
+| **Effective** | **0.384375** | $1.0 \times 0.75 \times (1 - 0.4875)$ |
+
+**Dual output representation:**
+
+| View | Base | Adjustment | Effective |
+|------|------|------------|-----------|
+| Probability | 1.0 | 0.615625 | 0.384375 |
+| Scaled ($v_{max}=100$) | 100 | 62 | 38 |
+
+### Persistence Policy
+
+- Measurements are stored in **SQLite** (file-based, no external DB dependency)
+- Each measurement has a `ttl` (default: 86 400 s = 24 h, max: 604 800 s = 7 d)
+- Expired measurements are **purged automatically**
+- `DELETE` removes immediately
+- Consumers should export data via `GET /v1/measurements/:id` before expiry
+- The server **must not promise permanent storage** — this is a computation API,
+  not a database; consumers are responsible for persisting their own data
+
+---
+
 ## Engine Functions
 
 > **⚠ CONFIDENTIAL — The `rskAggregate` output column reveals the proprietary formula.

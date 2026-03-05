@@ -28,6 +28,12 @@ security:
   - bearerAuth: []
 
 tags:
+  - name: Measurements
+    description: >
+      Server-managed measurement sessions. Create a measurement, add V-factors
+      with optional hierarchy structure, apply modifiers (confidence, controls),
+      and retrieve computed aggregates. Measurements expire after a configurable
+      TTL; consumers should export data before expiry.
   - name: RSK/VM
     description: >
       RSK Vulnerability Mode — composite measurements from risk factor vectors.
@@ -88,6 +94,296 @@ paths:
             application/x-yaml:
               schema:
                 type: string
+
+  # -----------------------------------------------------------------------
+  # Measurements — Session Lifecycle
+  # -----------------------------------------------------------------------
+  /v1/measurements:
+    post:
+      operationId: createMeasurement
+      tags: [Measurements]
+      summary: Create a new measurement
+      description: >
+        Initializes a measurement session with a hierarchy template (or custom
+        levels) and computation configuration. Returns a measurement ID for
+        subsequent factor and modifier operations. The measurement expires
+        after the specified TTL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMeasurementRequest"
+            examples:
+              flatDefault:
+                summary: "Flat list (default hierarchy)"
+                value:
+                  name: "Web Application Scan"
+              questionnaireTemplate:
+                summary: "QSD template (questionnaire → section → question)"
+                value:
+                  name: "NIST CSF Assessment"
+                  hierarchy: QSD
+              securityTestTemplate:
+                summary: "THHFA template (test → horizon → host → finding → annotation)"
+                value:
+                  name: "Q3 2026 Penetration Test"
+                  hierarchy: THHFA
+                  scalingBase: 4
+                  maximumValue: 100
+                  ttl: 604800
+              customHierarchy:
+                summary: "Custom 3-level hierarchy"
+                value:
+                  name: "Supply Chain Assessment"
+                  hierarchy: ["vendor", "product", "risk"]
+      responses:
+        "201":
+          description: Measurement created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeasurementResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/measurements/{measurementId}:
+    get:
+      operationId: getMeasurement
+      tags: [Measurements]
+      summary: Retrieve measurement with full hierarchy and aggregates
+      description: >
+        Returns the complete measurement including hierarchy tree, all factors
+        with their modifiers and effective values, and computed aggregates at
+        every hierarchy level. Both probability (0–1) and scaled (integer RU)
+        representations are included.
+      parameters:
+        - $ref: "#/components/parameters/MeasurementId"
+      responses:
+        "200":
+          description: Full measurement with computed aggregates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeasurementResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Measurement not found or expired
+
+    delete:
+      operationId: deleteMeasurement
+      tags: [Measurements]
+      summary: Delete a measurement
+      description: >
+        Permanently removes a measurement and all associated factors, modifiers,
+        and hierarchy nodes. This action is irreversible.
+      parameters:
+        - $ref: "#/components/parameters/MeasurementId"
+      responses:
+        "204":
+          description: Measurement deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Measurement not found or expired
+
+  /v1/measurements/{measurementId}/factors:
+    post:
+      operationId: addFactor
+      tags: [Measurements]
+      summary: Add a V-factor to the measurement
+      description: >
+        Adds a risk factor measurement at the leaf level of the hierarchy.
+        For multi-level hierarchies, provide a `path` array with one label
+        per grouping level above the leaf; intermediate nodes are created
+        automatically. For the default flat hierarchy, no path is needed.
+        Metadata is stored but ignored by the computation engine.
+      parameters:
+        - $ref: "#/components/parameters/MeasurementId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddFactorRequest"
+            examples:
+              flatHierarchy:
+                summary: "Add factor to flat hierarchy (no path)"
+                value:
+                  value: 0.80
+                  label: "SQL Injection"
+              withPath:
+                summary: "Add factor with THHFA path"
+                value:
+                  path: ["External", "Internet", "192.168.1.117", "SQL Injection"]
+                  value: 1.0
+                  label: "HTTP endpoint on port 80"
+                  metadata:
+                    cve: "CVE-2025-1234"
+                    cvss: 9.8
+              percentageInput:
+                summary: "Input as percentage (auto-detected: 80 → 0.80)"
+                value:
+                  value: 80
+                  label: "Cross-Site Scripting"
+      responses:
+        "201":
+          description: Factor added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FactorResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Measurement not found or expired
+
+    get:
+      operationId: listFactors
+      tags: [Measurements]
+      summary: List all factors with adjustments
+      description: >
+        Returns every V-factor in the measurement with its base value,
+        modifiers, accumulated adjustment, and effective measurement.
+        Both probability and scaled representations are included.
+      parameters:
+        - $ref: "#/components/parameters/MeasurementId"
+      responses:
+        "200":
+          description: Factor list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FactorListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Measurement not found or expired
+
+  /v1/measurements/{measurementId}/factors/{factorId}:
+    patch:
+      operationId: updateFactor
+      tags: [Measurements]
+      summary: Edit a factor's value, label, or metadata
+      description: >
+        Updates one or more properties of an existing V-factor. Only provided
+        fields are changed; omitted fields are untouched. Changing the value
+        triggers recomputation of effective measurement and all ancestor aggregates.
+      parameters:
+        - $ref: "#/components/parameters/MeasurementId"
+        - $ref: "#/components/parameters/FactorId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFactorRequest"
+      responses:
+        "200":
+          description: Factor updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FactorResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Measurement or factor not found
+
+    delete:
+      operationId: deleteFactor
+      tags: [Measurements]
+      summary: Remove a factor from the vector
+      description: >
+        Removes a V-factor and all its modifiers. Parent hierarchy nodes
+        are retained (even if empty) to preserve structure.
+      parameters:
+        - $ref: "#/components/parameters/MeasurementId"
+        - $ref: "#/components/parameters/FactorId"
+      responses:
+        "204":
+          description: Factor removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Measurement or factor not found
+
+  /v1/measurements/{measurementId}/factors/{factorId}/modifiers:
+    post:
+      operationId: addModifier
+      tags: [Measurements]
+      summary: Add a modifier to a factor
+      description: >
+        Attaches a modifier (confidence, control, or custom type) to a V-factor.
+        Modifiers adjust the factor's effective measurement. Multiple modifiers
+        of the same type are supported — direct modifiers multiply independently;
+        compound modifiers are aggregated before application.
+      parameters:
+        - $ref: "#/components/parameters/MeasurementId"
+        - $ref: "#/components/parameters/FactorId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddModifierRequest"
+            examples:
+              confidenceModifier:
+                summary: "Finding confidence: 75% certain"
+                value:
+                  type: confidence
+                  value: 0.75
+              controlModifier:
+                summary: "Control: WAF mitigation at 40% effectiveness"
+                value:
+                  type: control
+                  value: 0.40
+                  label: "Web Application Firewall"
+              secondControl:
+                summary: "Additional control: input validation at 30%"
+                value:
+                  type: control
+                  value: 0.30
+                  label: "Input Validation"
+      responses:
+        "201":
+          description: Modifier added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FactorResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Measurement or factor not found
+
+  /v1/measurements/{measurementId}/modifiers/{modifierId}:
+    delete:
+      operationId: deleteModifier
+      tags: [Measurements]
+      summary: Remove a modifier
+      description: >
+        Detaches a modifier from its factor. The factor's effective measurement
+        is recomputed without this modifier.
+      parameters:
+        - $ref: "#/components/parameters/MeasurementId"
+        - $ref: "#/components/parameters/ModifierId"
+      responses:
+        "204":
+          description: Modifier removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Measurement or modifier not found
 
   # -----------------------------------------------------------------------
   # NIST — Standards-Aligned Risk Matrix
@@ -721,6 +1017,32 @@ components:
           scopes:
             storm.read: Read-only computation access
             storm.write: Full computation access
+
+  # -----------------------------------------------------------------------
+  # Reusable Parameters
+  # -----------------------------------------------------------------------
+  parameters:
+    MeasurementId:
+      name: measurementId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: "Measurement session identifier"
+    FactorId:
+      name: factorId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: "V-factor identifier"
+    ModifierId:
+      name: modifierId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: "Modifier identifier"
 
   # -----------------------------------------------------------------------
   # Reusable Responses
@@ -1709,3 +2031,303 @@ components:
                   type: array
                   items:
                     type: number
+
+    # -----------------------------------------------------------------
+    # Measurement Lifecycle
+    # -----------------------------------------------------------------
+
+    CreateMeasurementRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: "Human-readable name for this measurement"
+        hierarchy:
+          description: >
+            Named template or custom array of level names. V-factors are added
+            at the leaf (deepest) level; aggregates roll upward.
+            Templates: "default" ([items]), "QSD" ([questionnaire, section,
+            question]), "THHFA" ([test, horizon, host, finding, annotation]).
+          oneOf:
+            - type: string
+              enum: [default, QSD, THHFA]
+            - type: array
+              items:
+                type: string
+              minItems: 1
+              maxItems: 8
+          default: "default"
+        scalingBase:
+          type: number
+          minimum: 1
+          exclusiveMinimum: true
+          default: 4
+          description: "Aggregation tuning parameter"
+        maximumValue:
+          type: number
+          default: 100
+          description: "v_max for scaled output representation"
+        ttl:
+          type: integer
+          minimum: 60
+          maximum: 604800
+          default: 86400
+          description: "Time-to-live in seconds (default: 24h, max: 7d)"
+        metadata:
+          type: object
+          description: "Optional metadata (stored but ignored by computation engine)"
+
+    MeasurementResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [id, name, hierarchy, configuration, factorCount, createdAt, expiresAt]
+          properties:
+            id:
+              type: string
+              description: "Measurement identifier (msr_...)"
+            name:
+              type: string
+            hierarchy:
+              type: object
+              properties:
+                template:
+                  type: string
+                  description: "Template name if used, or 'custom'"
+                levels:
+                  type: array
+                  items:
+                    type: string
+                  description: "Ordered level names from root to leaf"
+            configuration:
+              type: object
+              properties:
+                scalingBase:
+                  type: number
+                maximumValue:
+                  type: number
+            aggregate:
+              $ref: "#/components/schemas/DualMeasurement"
+            tree:
+              type: array
+              items:
+                $ref: "#/components/schemas/HierarchyNode"
+              description: "Full hierarchy tree (included on GET)"
+            factorCount:
+              type: integer
+            createdAt:
+              type: string
+              format: date-time
+            expiresAt:
+              type: string
+              format: date-time
+            metadata:
+              type: object
+
+    HierarchyNode:
+      type: object
+      required: [id, level, label]
+      properties:
+        id:
+          type: string
+          description: "Node identifier (nod_...)"
+        level:
+          type: string
+          description: "Which hierarchy level this node belongs to"
+        label:
+          type: string
+        aggregate:
+          $ref: "#/components/schemas/DualMeasurement"
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/HierarchyNode"
+          description: "Child nodes (next level down)"
+        factors:
+          type: array
+          items:
+            $ref: "#/components/schemas/FactorDetail"
+          description: "V-factors (only on leaf nodes)"
+        metadata:
+          type: object
+
+    DualMeasurement:
+      type: object
+      description: "Risk measurement in both probability and scaled representations"
+      properties:
+        probability:
+          type: object
+          properties:
+            base:
+              type: number
+              description: "Base measurement (0–1)"
+            adjustment:
+              type: number
+              description: "Total adjustment amount (base − effective)"
+            effective:
+              type: number
+              description: "Measurement after all modifiers applied"
+        scaled:
+          type: object
+          properties:
+            base:
+              type: integer
+              description: "Base measurement in RU (ceil(probability × maximumValue))"
+            adjustment:
+              type: integer
+              description: "Total adjustment amount in RU"
+            effective:
+              type: integer
+              description: "Effective measurement in RU"
+
+    FactorDetail:
+      type: object
+      required: [id, value, measurement]
+      properties:
+        id:
+          type: string
+          description: "Factor identifier (fct_...)"
+        nodeId:
+          type: string
+          description: "Parent leaf node ID"
+        path:
+          type: array
+          items:
+            type: string
+          description: "Hierarchy path labels from root to parent node"
+        value:
+          type: number
+          description: "Base measurement (0–1, after auto-detection)"
+        label:
+          type: string
+        modifiers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModifierDetail"
+        measurement:
+          $ref: "#/components/schemas/DualMeasurement"
+        metadata:
+          type: object
+
+    ModifierDetail:
+      type: object
+      required: [id, type, effect, value]
+      properties:
+        id:
+          type: string
+          description: "Modifier identifier (mod_...)"
+        type:
+          type: string
+          description: "Modifier type (e.g., 'confidence', 'control', or custom)"
+        effect:
+          type: string
+          enum: [attenuate, amplify]
+          description: >
+            Direction of adjustment. 'attenuate' reduces risk (confidence,
+            controls); 'amplify' increases risk (reserved for future use).
+        application:
+          type: string
+          enum: [direct, compound]
+          description: >
+            How multiple modifiers of the same type combine. 'direct' modifiers
+            multiply independently; 'compound' modifiers are aggregated before
+            application.
+        value:
+          type: number
+          minimum: 0
+          maximum: 1
+        label:
+          type: string
+        metadata:
+          type: object
+
+    AddFactorRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          type: number
+          minimum: 0
+          description: >
+            Base measurement. Values > 1.0 are auto-detected as percentages
+            and divided by 100 (e.g., 80 → 0.80).
+        path:
+          type: array
+          items:
+            type: string
+          description: >
+            Hierarchy path labels (one per grouping level above the leaf).
+            Omit for the default flat hierarchy. Intermediate nodes are
+            created automatically if they don't exist.
+        label:
+          type: string
+          description: "Human-readable label for this factor"
+        metadata:
+          type: object
+          description: "Optional metadata (stored but ignored by engine)"
+
+    UpdateFactorRequest:
+      type: object
+      description: "Partial update — only provided fields are changed"
+      properties:
+        value:
+          type: number
+          minimum: 0
+          description: "Updated base measurement (auto-detection applies)"
+        label:
+          type: string
+        metadata:
+          type: object
+
+    FactorResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/FactorDetail"
+
+    FactorListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/FactorDetail"
+
+    AddModifierRequest:
+      type: object
+      required: [type, value]
+      properties:
+        type:
+          type: string
+          description: >
+            Modifier type. Built-in types: 'confidence' (direct attenuation),
+            'control' (compound attenuation). Custom types are accepted.
+        effect:
+          type: string
+          enum: [attenuate, amplify]
+          default: attenuate
+          description: >
+            Direction of adjustment. Defaults to 'attenuate'. Custom types
+            may specify 'amplify' for future use.
+        application:
+          type: string
+          enum: [direct, compound]
+          description: >
+            How this modifier combines with others of the same type.
+            Defaults based on type: 'confidence' → direct, 'control' → compound.
+            Custom types default to 'direct'.
+        value:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: "Modifier value (0–1)"
+        label:
+          type: string
+          description: "Human-readable label (e.g., 'Web Application Firewall')"
+        metadata:
+          type: object
+          description: "Optional metadata (stored but ignored by engine)"

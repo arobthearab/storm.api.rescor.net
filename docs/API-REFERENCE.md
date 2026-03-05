@@ -46,6 +46,321 @@ Returns the OpenAPI specification (YAML). No authentication required.
 
 ---
 
+## Measurements — Session Lifecycle
+
+Measurements are server-managed sessions that hold a risk factor vector,
+hierarchy structure, and modifiers. Each measurement expires after a configurable
+TTL; consumers should export data before expiry.
+
+### Hierarchy Templates
+
+Measurements support configurable hierarchy levels. V-factors are always added at
+the **leaf** (deepest) level; aggregates roll upward through each level to the root.
+
+| Template | Levels | Use Case |
+|----------|--------|----------|
+| `default` | `[items]` | Flat list of vulnerability measurements |
+| `QSD` | `[questionnaire, section, question]` | Questionnaire-based risk assessment |
+| `THHFA` | `[test, horizon, host, finding, annotation]` | Security / penetration testing |
+
+Custom hierarchies: provide an array of 1–8 level names.
+
+### Modifiers
+
+A **modifier** is any adjustment applied to a V-factor's base measurement.
+Modifiers are classified by **effect** (direction) and **application** (combination method):
+
+| Type | Effect | Application | Behavior |
+|------|--------|-------------|----------|
+| `confidence` | `attenuate` | `direct` | Multiplies base by value independently |
+| `control` | `attenuate` | `compound` | Multiple controls are aggregated, then applied as `(1 − aggregate)` |
+
+Custom modifier types may be created with either effect and application mode.
+
+**Dual output** — every measurement is returned in both representations:
+
+| View | Base | Adjustment | Effective |
+|------|------|------------|-----------|
+| Probability | 1.0 | 0.615625 | 0.384375 |
+| Scaled (v\_max=100) | 100 | 62 | 38 |
+
+---
+
+### `POST /v1/measurements`
+
+Create a new measurement session.
+
+**Request (flat default hierarchy):**
+
+```json
+{
+  "name": "Web Application Scan"
+}
+```
+
+**Request (THHFA template with custom TTL):**
+
+```json
+{
+  "name": "Q3 2026 Penetration Test",
+  "hierarchy": "THHFA",
+  "scalingBase": 4,
+  "maximumValue": 100,
+  "ttl": 604800
+}
+```
+
+**Response (201):**
+
+```json
+{
+  "data": {
+    "id": "msr_a1b2c3d4",
+    "name": "Q3 2026 Penetration Test",
+    "hierarchy": {
+      "template": "THHFA",
+      "levels": ["test", "horizon", "host", "finding", "annotation"]
+    },
+    "configuration": {
+      "scalingBase": 4,
+      "maximumValue": 100
+    },
+    "factorCount": 0,
+    "createdAt": "2026-03-05T14:00:00.000Z",
+    "expiresAt": "2026-03-12T14:00:00.000Z"
+  }
+}
+```
+
+---
+
+### `GET /v1/measurements/{measurementId}`
+
+Retrieve the full measurement with hierarchy tree, all factors, modifiers,
+and computed aggregates at every level.
+
+**Response (200):**
+
+```json
+{
+  "data": {
+    "id": "msr_a1b2c3d4",
+    "name": "Q3 2026 Penetration Test",
+    "hierarchy": {
+      "template": "THHFA",
+      "levels": ["test", "horizon", "host", "finding", "annotation"]
+    },
+    "configuration": { "scalingBase": 4, "maximumValue": 100 },
+    "aggregate": {
+      "probability": { "base": 1.0, "adjustment": 0.615625, "effective": 0.384375 },
+      "scaled": { "base": 100, "adjustment": 62, "effective": 38 }
+    },
+    "tree": [
+      {
+        "id": "nod_ext01",
+        "level": "test",
+        "label": "External",
+        "aggregate": {
+          "probability": { "base": 1.0, "adjustment": 0.615625, "effective": 0.384375 },
+          "scaled": { "base": 100, "adjustment": 62, "effective": 38 }
+        },
+        "children": [
+          {
+            "id": "nod_inet01",
+            "level": "horizon",
+            "label": "Internet",
+            "aggregate": { "...": "..." },
+            "children": [
+              {
+                "id": "nod_host01",
+                "level": "host",
+                "label": "192.168.1.117",
+                "aggregate": { "...": "..." },
+                "children": [
+                  {
+                    "id": "nod_find01",
+                    "level": "finding",
+                    "label": "SQL Injection",
+                    "aggregate": { "...": "..." },
+                    "factors": [
+                      {
+                        "id": "fct_001",
+                        "nodeId": "nod_find01",
+                        "path": ["External", "Internet", "192.168.1.117", "SQL Injection"],
+                        "value": 1.0,
+                        "label": "HTTP endpoint on port 80",
+                        "modifiers": [
+                          { "id": "mod_001", "type": "confidence", "effect": "attenuate", "application": "direct", "value": 0.75 },
+                          { "id": "mod_002", "type": "control", "effect": "attenuate", "application": "compound", "value": 0.40, "label": "WAF" },
+                          { "id": "mod_003", "type": "control", "effect": "attenuate", "application": "compound", "value": 0.30, "label": "Input Validation" },
+                          { "id": "mod_004", "type": "control", "effect": "attenuate", "application": "compound", "value": 0.20, "label": "Parameterized Queries" }
+                        ],
+                        "measurement": {
+                          "probability": { "base": 1.0, "adjustment": 0.615625, "effective": 0.384375 },
+                          "scaled": { "base": 100, "adjustment": 62, "effective": 38 }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "factorCount": 1,
+    "createdAt": "2026-03-05T14:00:00.000Z",
+    "expiresAt": "2026-03-12T14:00:00.000Z"
+  }
+}
+```
+
+---
+
+### `DELETE /v1/measurements/{measurementId}`
+
+Permanently removes a measurement and all associated data. Returns `204 No Content`.
+
+---
+
+### `POST /v1/measurements/{measurementId}/factors`
+
+Add a V-factor at the leaf level. For multi-level hierarchies, provide a `path`
+array (one label per grouping level above the leaf); intermediate nodes are
+created automatically. Values > 1.0 are auto-detected as percentages (80 → 0.80).
+
+**Request (flat hierarchy):**
+
+```json
+{
+  "value": 0.80,
+  "label": "SQL Injection"
+}
+```
+
+**Request (THHFA with path and metadata):**
+
+```json
+{
+  "path": ["External", "Internet", "192.168.1.117", "SQL Injection"],
+  "value": 1.0,
+  "label": "HTTP endpoint on port 80",
+  "metadata": { "cve": "CVE-2025-1234", "cvss": 9.8 }
+}
+```
+
+**Response (201):**
+
+```json
+{
+  "data": {
+    "id": "fct_001",
+    "nodeId": "nod_find01",
+    "path": ["External", "Internet", "192.168.1.117", "SQL Injection"],
+    "value": 1.0,
+    "label": "HTTP endpoint on port 80",
+    "modifiers": [],
+    "measurement": {
+      "probability": { "base": 1.0, "adjustment": 0.0, "effective": 1.0 },
+      "scaled": { "base": 100, "adjustment": 0, "effective": 100 }
+    },
+    "metadata": { "cve": "CVE-2025-1234", "cvss": 9.8 }
+  }
+}
+```
+
+---
+
+### `GET /v1/measurements/{measurementId}/factors`
+
+List all factors with their modifiers and effective measurements.
+
+**Response (200):**
+
+```json
+{
+  "data": [
+    {
+      "id": "fct_001",
+      "nodeId": "nod_find01",
+      "path": ["External", "Internet", "192.168.1.117", "SQL Injection"],
+      "value": 1.0,
+      "label": "HTTP endpoint on port 80",
+      "modifiers": [
+        { "id": "mod_001", "type": "confidence", "effect": "attenuate", "application": "direct", "value": 0.75 },
+        { "id": "mod_002", "type": "control", "effect": "attenuate", "application": "compound", "value": 0.40, "label": "WAF" }
+      ],
+      "measurement": {
+        "probability": { "base": 1.0, "adjustment": 0.6, "effective": 0.4 },
+        "scaled": { "base": 100, "adjustment": 60, "effective": 40 }
+      }
+    }
+  ]
+}
+```
+
+---
+
+### `PATCH /v1/measurements/{measurementId}/factors/{factorId}`
+
+Update a factor's value, label, or metadata. Only provided fields are changed.
+
+**Request:**
+
+```json
+{
+  "value": 0.60,
+  "label": "SQL Injection (re-assessed)"
+}
+```
+
+**Response (200):** Returns the updated `FactorDetail` (same shape as add response).
+
+---
+
+### `DELETE /v1/measurements/{measurementId}/factors/{factorId}`
+
+Remove a factor and all its modifiers. Returns `204 No Content`.
+
+---
+
+### `POST /v1/measurements/{measurementId}/factors/{factorId}/modifiers`
+
+Attach a modifier to a V-factor. Built-in types (`confidence`, `control`) have
+preset effect and application modes; custom types default to `attenuate` / `direct`.
+
+**Request (confidence):**
+
+```json
+{
+  "type": "confidence",
+  "value": 0.75
+}
+```
+
+**Request (control with label):**
+
+```json
+{
+  "type": "control",
+  "value": 0.40,
+  "label": "Web Application Firewall"
+}
+```
+
+**Response (201):** Returns the full updated `FactorDetail` including all modifiers
+and the recomputed effective measurement.
+
+---
+
+### `DELETE /v1/measurements/{measurementId}/modifiers/{modifierId}`
+
+Remove a modifier. The factor's effective measurement is recomputed without it.
+Returns `204 No Content`.
+
+---
+
 ## RSK/VM — Vulnerability Mode
 
 RSK/VM computes composite risk measurements from vulnerability vectors.
