@@ -9,7 +9,8 @@ info:
     with Independent Ancillary Processes (HAM533, CRVE3, SCEP, AsrValuation).
 
     All measurements are expressed in Risk Units (RU). A larger measurement
-    indicates greater risk.
+    indicates greater risk. The RSK aggregation algorithm is proprietary;
+    this specification documents the API interface only.
   contact:
     name: RESCOR LLC
     url: https://rescor.net
@@ -47,6 +48,11 @@ tags:
   - name: Health
     description: Operational health and configuration endpoints
 
+# ---------------------------------------------------------------------------
+# ⚠ IP NOTICE: This file is served publicly at GET /v1/openapi.yaml.
+# It must NOT contain proprietary RSK formulas, algorithm descriptions,
+# or white-paper section references describing the aggregate function.
+# See docs/PROJECT-PATTERNS.md § Intellectual Property Classification.
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -191,11 +197,11 @@ paths:
     post:
       operationId: rskVmAggregate
       tags: [RSK/VM]
-      summary: Composite measurement (diminishing-returns aggregate)
+      summary: Composite risk measurement from a vector
       description: >
-        Computes the composite RSK measurement h = ⌈Σ V_j / a^j⌉ where V is
-        sorted descending and a is the scaling base. Implements the mathematical
-        model from Paper-RSK-NDA-V9.1 §XIII.H.
+        Computes the composite RSK measurement from a vector of risk factor
+        measurements. The vector is sorted internally before aggregation.
+        The aggregation algorithm is proprietary (Paper-RSK-NDA-V9.1).
       requestBody:
         required: true
         content:
@@ -203,18 +209,18 @@ paths:
             schema:
               $ref: "#/components/schemas/AggregateRequest"
             examples:
-              caseStudyHost0:
-                summary: "White paper host 0: {20, 5, 5, 5} → 22 RU"
+              smallVector:
+                summary: "4 risk factors"
                 value:
                   measurements: [20, 5, 5, 5]
                   scalingBase: 4
-              caseStudyHost2:
-                summary: "White paper host 2: {40, 10, 5, 5, 5, 5, 5, 5} → 43 RU"
+              mediumVector:
+                summary: "8 risk factors"
                 value:
                   measurements: [40, 10, 5, 5, 5, 5, 5, 5]
                   scalingBase: 4
-              caseStudyHorizon:
-                summary: "White paper horizon: → 63 RU"
+              largeVector:
+                summary: "37 risk factors"
                 value:
                   measurements: [50, 40, 40, 20, 20, 10, 10, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
                   scalingBase: 4
@@ -246,8 +252,8 @@ paths:
             schema:
               $ref: "#/components/schemas/AddMeasurementRequest"
             examples:
-              addToHost:
-                summary: "Add VID 1242 (30 RU) to host 0 vector"
+              addMeasurement:
+                summary: "Add a 30 RU measurement to an existing vector"
                 value:
                   measurements: [20, 5, 5, 5]
                   measurement: 30
@@ -270,9 +276,8 @@ paths:
       tags: [RSK/VM]
       summary: Normalize a raw measurement to 0–100
       description: >
-        Scales a raw composite measurement to a 0–100 range using the theoretical
-        upper bound: upperBound = v_max / (1 - 1/a). With defaults (v_max=100,
-        a=4), upperBound = 134.
+        Scales a raw composite measurement to a 0–100 range using the
+        theoretical upper bound for the given configuration parameters.
       requestBody:
         required: true
         content:
@@ -280,8 +285,8 @@ paths:
             schema:
               $ref: "#/components/schemas/NormalizeRequest"
             examples:
-              normalizeHost2:
-                summary: "Normalize 43 RU → ~32.09"
+              normalizeExample:
+                summary: "Normalize a raw composite measurement"
                 value:
                   raw: 43
                   maximumValue: 100
@@ -304,9 +309,9 @@ paths:
       tags: [RSK/VM]
       summary: Rate a measurement against relative risk levels
       description: >
-        Maps a composite measurement (in RU) to a relative risk level from
-        Paper-RSK-NDA-V9.1 Tables IA and IB. Supports both the standard 5-level
-        scale and the alternate 3-level scale.
+        Maps a composite measurement (in RU) to a relative risk level.
+        Supports both the standard 5-level scale (Low / Moderate / High /
+        Very High / Extreme) and the alternate 3-level scale (Low / Medium / High).
       requestBody:
         required: true
         content:
@@ -314,20 +319,20 @@ paths:
             schema:
               $ref: "#/components/schemas/RateRequest"
             examples:
-              rateHost0:
-                summary: "22 RU → Low (Table IA)"
+              rateLow:
+                summary: "22 RU measurement"
                 value:
                   measurement: 22
-              rateHost2:
-                summary: "43 RU → Moderate (Table IA)"
+              rateModerate:
+                summary: "43 RU measurement"
                 value:
                   measurement: 43
-              rateHost4:
-                summary: "50 RU → High (Table IA)"
+              rateHigh:
+                summary: "50 RU measurement"
                 value:
                   measurement: 50
-              rateAlternate:
-                summary: "43 RU → Medium (Table IB alternate scale)"
+              rateAlternateScale:
+                summary: "43 RU on alternate 3-level scale"
                 value:
                   measurement: 43
                   scale: alternate
@@ -359,8 +364,8 @@ paths:
             schema:
               $ref: "#/components/schemas/ScoreRequest"
             examples:
-              caseStudyNetwork:
-                summary: "Full pipeline for white paper host 2"
+              fullPipeline:
+                summary: "Full pipeline for 8 risk factors"
                 value:
                   measurements: [40, 10, 5, 5, 5, 5, 5, 5]
                   scalingBase: 4
@@ -383,8 +388,8 @@ paths:
       tags: [RSK/VM]
       summary: Calculate theoretical upper bound
       description: >
-        Computes the theoretical upper bound of the composite measurement:
-        upperBound = ⌈v_max / (1 - 1/a)⌉. With defaults, this is 134 RU.
+        Computes the theoretical upper bound of the composite measurement
+        for the given configuration parameters.
       requestBody:
         required: true
         content:
@@ -393,7 +398,7 @@ paths:
               $ref: "#/components/schemas/LimitRequest"
             examples:
               defaultParams:
-                summary: "v_max=100, a=4 → 134"
+                summary: "Default parameters"
                 value:
                   maximumValue: 100
                   scalingBase: 4
@@ -429,7 +434,7 @@ paths:
               $ref: "#/components/schemas/AdjustRequest"
             examples:
               caseStudyHost1_117:
-                summary: "White paper Table V: host 192.168.1.117, VID 563"
+                summary: "Adjust 4 risk factors with C, V_a, T_p"
                 value:
                   riskFactors:
                     - baseMeasurement: 100
@@ -579,7 +584,7 @@ paths:
       summary: "CRVE3 — Vulnerability exposure assessment"
       description: >
         Capabilities × Resources × Visibility (basic, max 27) with
-        Confidentiality, Integrity, Availability exposure (diminishing aggregate).
+        Confidentiality, Integrity, Availability exposure aggregate.
         Returns normalized exposure value (0–1).
       requestBody:
         required: true
@@ -618,7 +623,7 @@ paths:
         Evaluates aggregate control efficacy from a vector of controls, each
         with implemented (0–1) and correction (0–1) factors.
         Per-control effective = implemented × correction.
-        Aggregate efficacy = min(1, rskAggregate(effectives, a=4)).
+        Controls are aggregated using a proprietary function; result is capped at 1.0.
       requestBody:
         required: true
         content:
@@ -810,8 +815,7 @@ components:
           exclusiveMinimum: true
           default: 4
           description: >
-            Divisor base (a) controlling diminishing returns.
-            Paper default: 4.
+            Aggregation tuning parameter. Default: 4.
 
     AggregateResponse:
       type: object
@@ -823,7 +827,7 @@ components:
           properties:
             aggregate:
               type: integer
-              description: "Composite measurement h = ⌈Σ V_j / a^j⌉ (in RU)"
+              description: "Composite risk measurement (in RU)"
             measurements:
               type: array
               items:
@@ -833,7 +837,7 @@ components:
               type: number
             upperBound:
               type: number
-              description: "Theoretical upper bound: v_max / (1 - 1/a)"
+              description: "Theoretical upper bound for the configured parameters"
 
     # --- RSK/VM Add ---
     AddMeasurementRequest:
@@ -900,7 +904,7 @@ components:
         scalingBase:
           type: number
           default: 4
-          description: "Scaling base used to calculate the theoretical upper bound"
+          description: "Aggregation tuning parameter (must match value used for aggregation)"
 
     NormalizeResponse:
       type: object
@@ -934,8 +938,8 @@ components:
           enum: [standard, alternate]
           default: standard
           description: >
-            "standard" = Table IA (Low/Moderate/High/Very High/Extreme).
-            "alternate" = Table IB (Low/Medium/High).
+            "standard" = 5-level scale (Low/Moderate/High/Very High/Extreme).
+            "alternate" = 3-level scale (Low/Medium/High).
         thresholds:
           type: array
           items:
@@ -1044,7 +1048,7 @@ components:
           properties:
             upperBound:
               type: integer
-              description: "⌈v_max / (1 - 1/a)⌉"
+              description: "Theoretical upper bound of the composite measurement"
             maximumValue:
               type: number
             scalingBase:
@@ -1369,10 +1373,10 @@ components:
               description: "C × R × V (max 27)"
             cia:
               type: number
-              description: "Diminishing aggregate of C/I/A exposures"
+              description: "Aggregate of C/I/A exposures"
             ciaMax:
               type: number
-              description: "rskAggregate([3,3,3], a=4) → 4"
+              description: "Maximum possible C/I/A aggregate"
             basicMax:
               type: integer
               description: "3 × 3 × 3 = 27"
@@ -1415,7 +1419,7 @@ components:
               type: number
               minimum: 0
               maximum: 1
-              description: "min(1, rskAggregate(effectives, a=4))"
+              description: "Aggregate control efficacy (0–1)"
             effectives:
               type: array
               items:

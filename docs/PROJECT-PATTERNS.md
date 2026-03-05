@@ -28,6 +28,48 @@ This design enables:
 
 ---
 
+## Intellectual Property Classification
+
+### Proprietary (Confidential)
+
+The following are trade secrets of RESCOR LLC and **must never appear** in
+public-facing documentation, API specifications, error messages, or log output:
+
+| Asset | Description |
+|-------|-------------|
+| **RSK aggregate function** | The composite measurement algorithm (formula, constants, derivation) |
+| **Bounds formula** | Theoretical upper-bound calculation |
+| **T-V-A aggregation pipeline** | How adjusted measurements are composed into composite scores |
+| **Scaling-base semantics** | The mathematical role of `scalingBase` in the aggregate |
+| **Core assumptions text** | The three assumptions (worst-case, multiple vulnerability, diminishing effect) |
+
+### Public (Unrestricted)
+
+| Asset | Rationale |
+|-------|----------|
+| IAP models (HAM533, CRVE3, SCEP, AsrValuation) | Straightforward scaling functions; formulas may be published |
+| Loss expectancy (SLE, DLE) | Standard actuarial formulas |
+| NIST 800-30 mapping | Public standard; breakpoints are configurable |
+| RSK/RM per-factor adjustment ($C \times V_a \times T_p \times b$) | Standard probability product |
+| Parameter names and defaults | Required for API usability |
+
+### Enforcement Rules
+
+1. **`openapi.yaml` is publicly served** (`GET /v1/openapi.yaml`, no auth) —
+   it must contain zero proprietary formulas or algorithm descriptions.
+2. **API-REFERENCE.md** is consumer-facing — same restrictions as `openapi.yaml`.
+3. **This file** (PROJECT-PATTERNS.md) is internal developer documentation —
+   proprietary formulas appear below, clearly marked **CONFIDENTIAL**.
+4. **API responses** must not include algorithm metadata (formula strings,
+   intermediate series terms) beyond the declared schema fields.
+5. **Error messages** must not reveal algorithm internals
+   (e.g., ~~"geometric series overflow"~~ → "computation exceeds bounds").
+6. **Abuse detection** (future): successive probing vectors
+   (e.g., `[1,1,1,1]`, `[2,2,2,2]`, incrementing patterns) should be flagged
+   for review as potential reverse-engineering attempts.
+
+---
+
 ## RSK Modes
 
 > Reference: *Paper-RSK-NDA-V9.1*, A. T. Robinson (December 2007, NMI LLC).
@@ -65,6 +107,8 @@ effective at exploiting any identified risk factors.
 | `maximumValue` | v_max | 100 | Maximum risk factor base measurement |
 | `ratingThresholds` | — | [25, 50, 75, 100] | RU breakpoints (from white paper Table IA) |
 | `ratingLabels` | — | [Low, Moderate, High, Very High, Extreme] | Rating per threshold band |
+
+> **⚠ CONFIDENTIAL — Do not reproduce in public-facing documentation.**
 
 **Core assumptions (from white paper):**
 1. **Worst-case risk** — overall risk ≥ most severe risk factor
@@ -176,10 +220,6 @@ Aggregate efficacy: $\min(1,\ f(\text{effectives}, a=4))$ using the RSK aggregat
 
 ---
 
-## Engine Functions
-
----
-
 ## NIST SP 800-30 Risk Matrix Integration
 
 The STORM API provides a standards-aligned endpoint that maps RSK quantitative
@@ -237,6 +277,9 @@ or any other risk domain — the qualitative mapping changes, the math does not.
 ---
 
 ## Engine Functions
+
+> **⚠ CONFIDENTIAL — The `rskAggregate` output column reveals the proprietary formula.
+> Do not reproduce this table in public-facing documentation.**
 
 All engine functions are **pure** (no side effects, no I/O):
 

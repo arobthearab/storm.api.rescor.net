@@ -50,17 +50,14 @@ Returns the OpenAPI specification (YAML). No authentication required.
 
 RSK/VM computes composite risk measurements from vulnerability vectors.
 All assets are assumed to be of equal value, and the threat is assumed to be a
-single hostile agent that is 100% effective (Paper-RSK-NDA-V9.1 §V).
+single hostile agent that is 100% effective.
 
-### Core Formula
+### Computation Model
 
-$$h_i = f(V_i, a) = \left\lceil \sum_{j=0}^{|V_i|-1} \frac{V_{ij}}{a^j} \right\rceil$$
-
-Where $V_i = \{v_0, v_1, \ldots\}$ is **sorted descending**, $a$ is the scaling base (default 4).
-
-**Bounds:** $V_{i0} \leq f(V_i, a) \leq \lceil v_{max} / (1 - 1/a) \rceil$
-
-With defaults ($v_{max}=100$, $a=4$): upper bound = **134 RU**.
+The composite measurement is computed using a **proprietary aggregation algorithm**
+(Paper-RSK-NDA-V9.1). The measurement vector is sorted internally; the result is
+a single integer value in Risk Units (RU). A configuration parameter (`scalingBase`)
+controls the aggregation behavior.
 
 ---
 
@@ -89,16 +86,6 @@ Compute the composite measurement from a risk factor vector.
   }
 }
 ```
-
-**White paper verification (Appendix B, $a=4$):**
-
-| Vector | Result |
-|--------|--------|
-| `[20, 5, 5, 5]` | 22 RU |
-| `[20, 5, 5, 5, 5, 5, 5, 5, 5, 5]` | 22 RU |
-| `[40, 10, 5, 5, 5, 5, 5, 5]` | 43 RU |
-| `[50]` | 50 RU |
-| `[50, 40, 40, 20, 20, 10, 10, 5, ...]` | 63 RU |
 
 ---
 
@@ -165,9 +152,9 @@ $$\text{normalized} = \min\left(100,\ \frac{\text{raw}}{\text{upperBound}} \time
 
 ### `POST /v1/rsk/vm/rate`
 
-Map a composite measurement to a Relative Risk Level (Paper-RSK-NDA-V9.1 Tables IA/IB).
+Map a composite measurement to a Relative Risk Level.
 
-**Standard scale (Table IA):**
+**Standard scale:**
 
 | Level | Low RU | High RU |
 |-------|--------|---------|
@@ -177,7 +164,7 @@ Map a composite measurement to a Relative Risk Level (Paper-RSK-NDA-V9.1 Tables 
 | Very High | 75 | 99 |
 | Extreme | 100 | + |
 
-**Alternate scale (Table IB):**
+**Alternate scale:**
 
 | Level | Low RU | High RU |
 |-------|--------|---------|
@@ -246,9 +233,8 @@ Full RSK/VM pipeline: **aggregate → normalize → rate** in one request.
 
 ### `POST /v1/rsk/vm/limit`
 
-Calculate the theoretical upper bound of the composite measurement.
-
-$$\text{upperBound} = \left\lceil \frac{v_{max}}{1 - \frac{1}{a}} \right\rceil$$
+Calculate the theoretical upper bound of the composite measurement for a
+given configuration.
 
 **Request:**
 
@@ -276,7 +262,7 @@ $$\text{upperBound} = \left\lceil \frac{v_{max}}{1 - \frac{1}{a}} \right\rceil$$
 ## RSK/RM — Risk Mode
 
 RSK Risk Mode extends RSK/VM with confidence, asset value, and threat potential.
-Each base measurement is adjusted before aggregation (Paper-RSK-NDA-V9.1 §XIII.G):
+Each base measurement is adjusted before aggregation:
 
 $$v_i = C_i \times V_{a_i} \times T_{p_i} \times b_i$$
 
@@ -472,8 +458,7 @@ SLE and DLE.
 ## IAP — Independent Ancillary Processes
 
 IAPs are self-contained assessment models that each produce a normalized 0–1
-factor value. They correspond to the RSK/RM adjustment factors defined in
-Paper-RSK-NDA-V9.1 §XIII.G.
+factor value. They correspond to the RSK/RM adjustment factors.
 
 ---
 
@@ -519,7 +504,7 @@ $$\text{probability} = \frac{H \times A \times M}{45} \qquad \text{impact} = \fr
 **CRVE3 — Vulnerability exposure assessment.**
 
 Basic component: $C \times R \times V$ (max 27).
-CIA aggregate: diminishing-returns aggregate of C/I/A exposures using $a=4$.
+CIA aggregate: proprietary aggregate of C/I/A exposures.
 Final exposure: $\frac{\text{cia} \times \text{basic}}{\text{ciaMax} \times \text{basicMax}}$
 
 Where $\text{ciaMax} = f([3, 3, 3], 4) = 4$ and $\text{basicMax} = 27$.
@@ -558,7 +543,7 @@ Where $\text{ciaMax} = f([3, 3, 3], 4) = 4$ and $\text{basicMax} = 27$.
 **SCEP — Control efficacy assessment.**
 
 Per-control effective: $\text{effective} = \text{implemented} \times \text{correction}$.
-Aggregate efficacy: $\min(1,\ f(\text{effectives},\ a=4))$ using the RSK aggregate function.
+Aggregate efficacy: proprietary aggregate of per-control effectives, capped at 1.0.
 
 **Request:**
 
@@ -590,7 +575,7 @@ Aggregate efficacy: $\min(1,\ f(\text{effectives},\ a=4))$ using the RSK aggrega
 
 $$A = \frac{\text{classification} \times \text{users} \times \text{hvAggregate}}{3 \times 5 \times \text{hvMax}}$$
 
-High-value data categories (6 booleans) are aggregated using the RSK diminishing-returns
+High-value data categories (6 booleans) are aggregated using a proprietary
 function to produce `hvAggregate`; `hvMax` is the aggregate of all-true values.
 
 **Request:**
@@ -811,10 +796,10 @@ All errors use a consistent envelope:
 
 | Parameter | Default | Domain | Description |
 |-----------|---------|--------|-------------|
-| `scalingBase` | 4 | $a > 1$ | Divisor base controlling diminishing returns |
+| `scalingBase` | 4 | $a > 1$ | Aggregation tuning parameter |
 | `minimumValue` | 1 | $v_{min} \geq 0$ | Minimum valid risk factor base measurement |
 | `maximumValue` | 100 | $v_{max} > v_{min}$ | Maximum valid risk factor base measurement |
-| `scale` | `"standard"` | `standard` \| `alternate` | Relative Risk Level table (IA or IB) |
+| `scale` | `"standard"` | `standard` \| `alternate` | Relative Risk Level scale (5-level or 3-level) |
 | `precision` | null | integer $\geq 0$ | Decimal places for normalized value |
 
 ---
