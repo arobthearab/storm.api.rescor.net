@@ -11,20 +11,17 @@
 | Layer      | Stack                          | Port |
 |------------|--------------------------------|------|
 | API        | Express 4 + @rescor/core-*     | 3200 |
+| Database   | Neo4j 5.15 Community (APOC)    | 17787 (Bolt) / 17574 (HTTP) |
 | Runtime    | Node 18+ (ESM `.mjs`)         | —    |
 | Auth       | OAuth 2.0 / OIDC / JWT / mTLS | —    |
 | Gateway    | AWS API Gateway / Azure APIM / GCP Cloud Endpoints | — |
 
-### Stateless Engine Design
+### Hybrid Engine Design
 
-The STORM API is a **pure computation service** — no database, no persistent state.
-Every request carries all necessary inputs; every response carries complete outputs.
-This design enables:
-
-- Horizontal scaling (any instance can serve any request)
-- API Gateway caching and rate limiting
-- Easy integration testing (no setup/teardown)
-- Multiple consumers sharing one engine (ASR, SRA, TC, etc.)
+The STORM API combines **stateless computation** (RSK/VM, RSK/RM, IAP, NIST)
+with **measurement session persistence** via Neo4j. Computation endpoints carry
+all inputs per-request; measurement endpoints persist factor/modifier data
+in a Neo4j graph for aggregation and analysis.
 
 ---
 

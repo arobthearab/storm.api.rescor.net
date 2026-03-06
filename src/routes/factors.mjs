@@ -63,8 +63,8 @@ export function createFactorRoutes ({ store }) {
   /**
    * Resolve the parent measurement or throw 404.
    */
-  function requireMeasurement (request) {
-    const measurement = store.getMeasurement(request.params.measurementId)
+  async function requireMeasurement (request) {
+    const measurement = await store.getMeasurement(request.params.measurementId)
     if (!measurement) {
       throw new NotFoundError('Measurement not found')
     }
@@ -72,15 +72,15 @@ export function createFactorRoutes ({ store }) {
   }
 
   // POST /v1/measurements/:measurementId/factors
-  router.post('/', (request, response, next) => {
+  router.post('/', async (request, response, next) => {
     try {
-      const measurement = requireMeasurement(request)
+      const measurement = await requireMeasurement(request)
       const validated = validateAddFactor(request.body)
 
       // Auto-detect probability
       validated.value = autoDetectProbability(validated.value)
 
-      const factor = store.addFactor(measurement.id, validated)
+      const factor = await store.addFactor(measurement.id, validated)
 
       if (!factor) {
         throw new NotFoundError('Measurement not found')
@@ -96,10 +96,10 @@ export function createFactorRoutes ({ store }) {
   })
 
   // GET /v1/measurements/:measurementId/factors
-  router.get('/', (request, response, next) => {
+  router.get('/', async (request, response, next) => {
     try {
-      const measurement = requireMeasurement(request)
-      const factors = store.listFactors(measurement.id)
+      const measurement = await requireMeasurement(request)
+      const factors = await store.listFactors(measurement.id)
       const { scalingBase, maximumValue } = measurement.configuration
 
       const enriched = factors.map(factor => enrichFactor(factor, scalingBase, maximumValue))
@@ -114,9 +114,9 @@ export function createFactorRoutes ({ store }) {
   })
 
   // PATCH /v1/measurements/:measurementId/factors/:factorId
-  router.patch('/:factorId', (request, response, next) => {
+  router.patch('/:factorId', async (request, response, next) => {
     try {
-      const measurement = requireMeasurement(request)
+      const measurement = await requireMeasurement(request)
       const validated = validateUpdateFactor(request.body)
 
       // Auto-detect probability on value update
@@ -124,7 +124,7 @@ export function createFactorRoutes ({ store }) {
         validated.value = autoDetectProbability(validated.value)
       }
 
-      const factor = store.updateFactor(measurement.id, request.params.factorId, validated)
+      const factor = await store.updateFactor(measurement.id, request.params.factorId, validated)
 
       if (!factor) {
         throw new NotFoundError('Factor not found')
@@ -140,10 +140,10 @@ export function createFactorRoutes ({ store }) {
   })
 
   // DELETE /v1/measurements/:measurementId/factors/:factorId
-  router.delete('/:factorId', (request, response, next) => {
+  router.delete('/:factorId', async (request, response, next) => {
     try {
-      requireMeasurement(request)
-      const deleted = store.deleteFactor(request.params.measurementId, request.params.factorId)
+      await requireMeasurement(request)
+      const deleted = await store.deleteFactor(request.params.measurementId, request.params.factorId)
 
       if (!deleted) {
         throw new NotFoundError('Factor not found')
@@ -156,11 +156,11 @@ export function createFactorRoutes ({ store }) {
   })
 
   // POST /v1/measurements/:measurementId/factors/:factorId/modifiers
-  router.post('/:factorId/modifiers', (request, response, next) => {
+  router.post('/:factorId/modifiers', async (request, response, next) => {
     try {
-      const measurement = requireMeasurement(request)
+      const measurement = await requireMeasurement(request)
       const validated = validateAddModifier(request.body)
-      const factor = store.addModifier(measurement.id, request.params.factorId, validated)
+      const factor = await store.addModifier(measurement.id, request.params.factorId, validated)
 
       if (!factor) {
         throw new NotFoundError('Factor not found')
@@ -189,14 +189,14 @@ export function createModifierRoutes ({ store }) {
   const router = Router({ mergeParams: true })
 
   // DELETE /v1/measurements/:measurementId/modifiers/:modifierId
-  router.delete('/:modifierId', (request, response, next) => {
+  router.delete('/:modifierId', async (request, response, next) => {
     try {
-      const measurement = store.getMeasurement(request.params.measurementId)
+      const measurement = await store.getMeasurement(request.params.measurementId)
       if (!measurement) {
         throw new NotFoundError('Measurement not found')
       }
 
-      const deleted = store.deleteModifier(measurement.id, request.params.modifierId)
+      const deleted = await store.deleteModifier(measurement.id, request.params.modifierId)
 
       if (!deleted) {
         throw new NotFoundError('Modifier not found')

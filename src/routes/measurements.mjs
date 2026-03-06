@@ -72,14 +72,14 @@ function computeAggregate (factors, scalingBase, maximumValue) {
  *
  * @param {object} measurement - Raw measurement from store
  * @param {object} store       - MeasurementStore instance
- * @returns {object}
+ * @returns {Promise<object>}
  */
-function enrichMeasurement (measurement, store) {
-  const factors = store.listFactors(measurement.id)
+async function enrichMeasurement (measurement, store) {
+  const factors = await store.listFactors(measurement.id)
   const { scalingBase, maximumValue } = measurement.configuration
 
   const aggregate = computeAggregate(factors, scalingBase, maximumValue)
-  const tree = store.buildTree(measurement.id)
+  const tree = await store.buildTree(measurement.id)
 
   // Enrich tree nodes with aggregates
   enrichTreeNodes(tree, store, scalingBase, maximumValue)
@@ -163,11 +163,11 @@ export function createMeasurementRoutes ({ store }) {
   const router = Router()
 
   // POST /v1/measurements
-  router.post('/', (request, response, next) => {
+  router.post('/', async (request, response, next) => {
     try {
       const validated = validateCreateMeasurement(request.body)
-      const measurement = store.createMeasurement(validated)
-      const enriched = enrichMeasurement(measurement, store)
+      const measurement = await store.createMeasurement(validated)
+      const enriched = await enrichMeasurement(measurement, store)
 
       response.status(201).json({ data: enriched })
     } catch (error) {
@@ -176,15 +176,15 @@ export function createMeasurementRoutes ({ store }) {
   })
 
   // GET /v1/measurements/:measurementId
-  router.get('/:measurementId', (request, response, next) => {
+  router.get('/:measurementId', async (request, response, next) => {
     try {
-      const measurement = store.getMeasurement(request.params.measurementId)
+      const measurement = await store.getMeasurement(request.params.measurementId)
 
       if (!measurement) {
         throw new NotFoundError('Measurement not found')
       }
 
-      const enriched = enrichMeasurement(measurement, store)
+      const enriched = await enrichMeasurement(measurement, store)
       response.json({ data: enriched })
     } catch (error) {
       next(error)
@@ -192,9 +192,9 @@ export function createMeasurementRoutes ({ store }) {
   })
 
   // DELETE /v1/measurements/:measurementId
-  router.delete('/:measurementId', (request, response, next) => {
+  router.delete('/:measurementId', async (request, response, next) => {
     try {
-      const deleted = store.deleteMeasurement(request.params.measurementId)
+      const deleted = await store.deleteMeasurement(request.params.measurementId)
 
       if (!deleted) {
         throw new NotFoundError('Measurement not found')

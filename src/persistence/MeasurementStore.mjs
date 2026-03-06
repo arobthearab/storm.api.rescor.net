@@ -1,11 +1,13 @@
 /**
- * SQLite persistence for measurement sessions.
+ * Neo4j persistence for measurement sessions.
  *
  * Provides CRUD operations for measurements, factors, and modifiers.
- * TTL-based auto-purge of expired sessions.
+ * TTL-based auto-purge via APOC TTL plugin.
+ *
+ * Node labels: Measurement, HierarchyNode, Factor, Modifier
+ * Relationships: PART_OF, CHILD_OF, BELONGS_TO, MODIFIES
  */
 
-import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 
 const HIERARCHY_TEMPLATES = {
@@ -15,78 +17,14 @@ const HIERARCHY_TEMPLATES = {
 }
 
 /**
- * Measurement store backed by SQLite.
+ * Measurement store backed by Neo4j.
  */
 export class MeasurementStore {
   /**
-   * @param {string} databasePath - Path to SQLite file (default: in-memory)
+   * @param {import('./database.mjs').SessionPerQueryWrapper} database
    */
-  constructor (databasePath = ':memory:') {
-    this.database = new Database(databasePath)
-    this.database.pragma('journal_mode = WAL')
-    this.database.pragma('foreign_keys = ON')
-    this._createSchema()
-  }
-
-  // -------------------------------------------------------------------------
-  // Schema
-  // -------------------------------------------------------------------------
-
-  _createSchema () {
-    this.database.exec(`
-      CREATE TABLE IF NOT EXISTS measurements (
-        id            TEXT PRIMARY KEY,
-        name          TEXT NOT NULL,
-        template      TEXT NOT NULL DEFAULT 'default',
-        levels        TEXT NOT NULL DEFAULT '["items"]',
-        scaling_base  REAL NOT NULL DEFAULT 4,
-        maximum_value REAL NOT NULL DEFAULT 100,
-        metadata      TEXT DEFAULT '{}',
-        created_at    TEXT NOT NULL,
-        expires_at    TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS nodes (
-        id              TEXT PRIMARY KEY,
-        measurement_id  TEXT NOT NULL REFERENCES measurements(id) ON DELETE CASCADE,
-        parent_id       TEXT REFERENCES nodes(id) ON DELETE CASCADE,
-        level           TEXT NOT NULL,
-        label           TEXT NOT NULL DEFAULT '',
-        sort_order      INTEGER NOT NULL DEFAULT 0,
-        metadata        TEXT DEFAULT '{}'
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_nodes_measurement ON nodes(measurement_id);
-      CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parent_id);
-
-      CREATE TABLE IF NOT EXISTS factors (
-        id              TEXT PRIMARY KEY,
-        measurement_id  TEXT NOT NULL REFERENCES measurements(id) ON DELETE CASCADE,
-        node_id         TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-        value           REAL NOT NULL,
-        label           TEXT NOT NULL DEFAULT '',
-        path            TEXT NOT NULL DEFAULT '[]',
-        metadata        TEXT DEFAULT '{}'
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_factors_measurement ON factors(measurement_id);
-      CREATE INDEX IF NOT EXISTS idx_factors_node ON factors(node_id);
-
-      CREATE TABLE IF NOT EXISTS modifiers (
-        id              TEXT PRIMARY KEY,
-        factor_id       TEXT NOT NULL REFERENCES factors(id) ON DELETE CASCADE,
-        measurement_id  TEXT NOT NULL REFERENCES measurements(id) ON DELETE CASCADE,
-        type            TEXT NOT NULL,
-        effect          TEXT NOT NULL DEFAULT 'attenuate',
-        application     TEXT NOT NULL DEFAULT 'direct',
-        value           REAL NOT NULL,
-        label           TEXT NOT NULL DEFAULT '',
-        metadata        TEXT DEFAULT '{}'
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_modifiers_factor ON modifiers(factor_id);
-      CREATE INDEX IF NOT EXISTS idx_modifiers_measurement ON modifiers(measurement_id);
-    `)
+  constructor (database) {
+    this.database = database
   }
 
   // -------------------------------------------------------------------------
@@ -106,13 +44,13 @@ export class MeasurementStore {
    * Create a new measurement session.
    *
    * @param {object} input - CreateMeasurementRequest fields
-   * @returns {object} Created measurement record
+   * @returns {Promise<object>} Created measurement record
    */
-  createMeasurement (input) {
+  async createMeasurement (input) {
     const id = this._measurementId()
     const now = new Date()
-    const ttl = input.ttl || 86400
-    const expiresAt = new Date(now.getTime() + ttl * 1000)
+    const ttlSeconds = input.ttl || 86400
+    const expiresAt = new Date(now.getTime() + ttlSeconds * 1000)
 
     let template
     let levels
@@ -124,22 +62,33 @@ export class MeasurementStore {
       levels = HIERARCHY_TEMPLATES[template] || HIERARCHY_TEMPLATES.default
     }
 
-    this.database.prepare(`
-      INSERT INTO measurements (id, name, template, levels, scaling_base, maximum_value, metadata, created_at, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    await this.database.query(`
+      CREATE (m:Measurement {
+        id:           $id,
+        name:         $name,
+        template:     $template,
+        levels:       $levels,
+        scalingBase:  $scalingBase,
+        maximumValue: $maximumValue,
+        metadata:     $metadata,
+        createdAt:    $createdAt,
+        expiresAt:    $expiresAt,
+        ttl:          $ttl
+      })
+    `, {
       id,
-      input.name || '',
+      name: input.name || '',
       template,
-      JSON.stringify(levels),
-      input.scalingBase || 4,
-      input.maximumValue || 100,
-      JSON.stringify(input.metadata || {}),
-      now.toISOString(),
-      expiresAt.toISOString()
-    )
+      levels: JSON.stringify(levels),
+      scalingBase: input.scalingBase || 4,
+      maximumValue: input.maximumValue || 100,
+      metadata: JSON.stringify(input.metadata || {}),
+      createdAt: now.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      ttl: expiresAt.getTime()
+    })
 
-    const result = this.getMeasurement(id)
+    const result = await this.getMeasurement(id)
     return result
   }
 
@@ -147,31 +96,36 @@ export class MeasurementStore {
    * Retrieve a measurement by ID.
    *
    * @param {string} id - Measurement ID
-   * @returns {object|null} Measurement record or null if not found / expired
+   * @returns {Promise<object|null>} Measurement record or null
    */
-  getMeasurement (id) {
-    this._purgeExpired()
-
-    const row = this.database.prepare('SELECT * FROM measurements WHERE id = ?').get(id)
+  async getMeasurement (id) {
+    const rows = await this.database.query(`
+      MATCH (m:Measurement { id: $id })
+      WHERE m.expiresAt > $now
+      OPTIONAL MATCH (f:Factor { measurementId: $id })
+      RETURN m, count(f) AS factorCount
+    `, { id, now: new Date().toISOString() })
 
     let result = null
 
-    if (row) {
+    if (rows.length > 0) {
+      const row = rows[0]
+      const m = row.m
       result = {
-        id: row.id,
-        name: row.name,
+        id: m.id,
+        name: m.name,
         hierarchy: {
-          template: row.template,
-          levels: JSON.parse(row.levels)
+          template: m.template,
+          levels: JSON.parse(m.levels)
         },
         configuration: {
-          scalingBase: row.scaling_base,
-          maximumValue: row.maximum_value
+          scalingBase: m.scalingBase,
+          maximumValue: m.maximumValue
         },
-        factorCount: this._countFactors(row.id),
-        createdAt: row.created_at,
-        expiresAt: row.expires_at,
-        metadata: JSON.parse(row.metadata)
+        factorCount: row.factorCount,
+        createdAt: m.createdAt,
+        expiresAt: m.expiresAt,
+        metadata: JSON.parse(m.metadata)
       }
     }
 
@@ -179,14 +133,26 @@ export class MeasurementStore {
   }
 
   /**
-   * Delete a measurement and all children.
+   * Delete a measurement and all children (nodes, factors, modifiers).
    *
    * @param {string} id - Measurement ID
-   * @returns {boolean} True if deleted
+   * @returns {Promise<boolean>} True if deleted
    */
-  deleteMeasurement (id) {
-    const info = this.database.prepare('DELETE FROM measurements WHERE id = ?').run(id)
-    const result = info.changes > 0
+  async deleteMeasurement (id) {
+    const rows = await this.database.query(`
+      MATCH (m:Measurement { id: $id })
+      OPTIONAL MATCH (n:HierarchyNode { measurementId: $id })
+      OPTIONAL MATCH (f:Factor { measurementId: $id })
+      OPTIONAL MATCH (mod:Modifier { measurementId: $id })
+      WITH m, collect(DISTINCT n) AS nodes, collect(DISTINCT f) AS factors, collect(DISTINCT mod) AS modifiers
+      FOREACH (mod IN modifiers | DETACH DELETE mod)
+      FOREACH (f IN factors | DETACH DELETE f)
+      FOREACH (n IN nodes | DETACH DELETE n)
+      DETACH DELETE m
+      RETURN true AS deleted
+    `, { id })
+
+    const result = rows.length > 0
     return result
   }
 
@@ -197,60 +163,75 @@ export class MeasurementStore {
   /**
    * Find or create a hierarchy node for the given path.
    *
+   * Walks down from root, creating nodes as needed via MERGE.
+   *
    * @param {string}   measurementId - Parent measurement
    * @param {string[]} path          - Labels for each grouping level above the leaf
    * @param {string[]} levels        - Hierarchy level names
-   * @returns {string} Leaf-parent node ID
+   * @returns {Promise<string>} Leaf-parent node ID
    */
-  ensureNodePath (measurementId, path, levels) {
-    let parentId = null
+  async ensureNodePath (measurementId, path, levels) {
+    if (path.length === 0) {
+      // Default root node
+      const rootLevel = levels[0] || 'items'
+      const rows = await this.database.query(`
+        MERGE (n:HierarchyNode { measurementId: $measurementId, level: $rootLevel, label: 'root', parentId: 'none' })
+          ON CREATE SET n.id = $nodeId, n.sortOrder = 0, n.metadata = '{}'
+        WITH n
+        MERGE (n)-[:PART_OF]->(:Measurement { id: $measurementId })
+        RETURN n.id AS nodeId
+      `, {
+        measurementId,
+        rootLevel,
+        nodeId: this._nodeId()
+      })
 
-    // Walk down from the root, creating intermediate nodes as needed
+      const result = rows[0].nodeId
+      return result
+    }
+
+    // Walk down, creating each level as needed
+    let parentId = 'none'
+    let nodeId = null
+
     for (let depth = 0; depth < path.length; depth++) {
       const level = levels[depth] || `level_${depth}`
       const label = path[depth]
+      const candidateId = this._nodeId()
+      const isRoot = depth === 0
 
-      let existing
-      if (parentId == null) {
-        existing = this.database.prepare(
-          'SELECT id FROM nodes WHERE measurement_id = ? AND level = ? AND label = ? AND parent_id IS NULL'
-        ).get(measurementId, level, label)
-      } else {
-        existing = this.database.prepare(
-          'SELECT id FROM nodes WHERE measurement_id = ? AND level = ? AND label = ? AND parent_id = ?'
-        ).get(measurementId, level, label, parentId)
-      }
+      const rows = await this.database.query(`
+        MERGE (n:HierarchyNode { measurementId: $measurementId, level: $level, label: $label, parentId: $parentId })
+          ON CREATE SET n.id = $candidateId, n.sortOrder = 0, n.metadata = '{}'
+        WITH n
+        CALL {
+          WITH n
+          WITH n WHERE $isRoot = true
+          MERGE (m:Measurement { id: $measurementId })
+          MERGE (n)-[:PART_OF]->(m)
+        }
+        CALL {
+          WITH n
+          WITH n WHERE $isRoot = false
+          MATCH (parent:HierarchyNode { measurementId: $measurementId, id: $parentNodeId })
+          MERGE (n)-[:CHILD_OF]->(parent)
+        }
+        RETURN n.id AS nodeId
+      `, {
+        measurementId,
+        level,
+        label,
+        parentId,
+        candidateId,
+        isRoot,
+        parentNodeId: parentId === 'none' ? '' : parentId
+      })
 
-      if (existing) {
-        parentId = existing.id
-      } else {
-        const nodeId = this._nodeId()
-        this.database.prepare(
-          'INSERT INTO nodes (id, measurement_id, parent_id, level, label) VALUES (?, ?, ?, ?, ?)'
-        ).run(nodeId, measurementId, parentId, level, label)
-        parentId = nodeId
-      }
+      nodeId = rows[0].nodeId
+      parentId = nodeId
     }
 
-    // If no path was given, use a default root node
-    if (parentId == null) {
-      const rootLevel = levels[0] || 'items'
-      let rootNode = this.database.prepare(
-        'SELECT id FROM nodes WHERE measurement_id = ? AND level = ? AND parent_id IS NULL'
-      ).get(measurementId, rootLevel)
-
-      if (!rootNode) {
-        const rootId = this._nodeId()
-        this.database.prepare(
-          'INSERT INTO nodes (id, measurement_id, parent_id, level, label) VALUES (?, ?, ?, ?, ?)'
-        ).run(rootId, measurementId, null, rootLevel, 'root')
-        parentId = rootId
-      } else {
-        parentId = rootNode.id
-      }
-    }
-
-    const result = parentId
+    const result = nodeId
     return result
   }
 
@@ -263,72 +244,84 @@ export class MeasurementStore {
    *
    * @param {string} measurementId - Parent measurement
    * @param {object} input         - AddFactorRequest
-   * @returns {object} Created factor record
+   * @returns {Promise<object|null>} Created factor record
    */
-  addFactor (measurementId, input) {
-    const measurement = this.getMeasurement(measurementId)
+  async addFactor (measurementId, input) {
+    const measurement = await this.getMeasurement(measurementId)
     if (!measurement) {
       return null
     }
 
     const levels = measurement.hierarchy.levels
     const path = input.path || []
-    const nodeId = this.ensureNodePath(measurementId, path, levels)
+    const nodeId = await this.ensureNodePath(measurementId, path, levels)
 
     const factorId = this._factorId()
 
-    this.database.prepare(`
-      INSERT INTO factors (id, measurement_id, node_id, value, label, path, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    await this.database.query(`
+      MATCH (n:HierarchyNode { id: $nodeId })
+      CREATE (f:Factor {
+        id:            $factorId,
+        measurementId: $measurementId,
+        nodeId:        $nodeId,
+        value:         $value,
+        label:         $label,
+        path:          $path,
+        metadata:      $metadata
+      })-[:BELONGS_TO]->(n)
+    `, {
+      nodeId,
       factorId,
       measurementId,
-      nodeId,
-      input.value,
-      input.label || '',
-      JSON.stringify(path),
-      JSON.stringify(input.metadata || {})
-    )
+      value: input.value,
+      label: input.label || '',
+      path: JSON.stringify(path),
+      metadata: JSON.stringify(input.metadata || {})
+    })
 
-    const result = this.getFactor(measurementId, factorId)
+    const result = await this.getFactor(measurementId, factorId)
     return result
   }
 
   /**
-   * Get a factor by ID.
+   * Get a factor by ID, including its modifiers.
    *
    * @param {string} measurementId
    * @param {string} factorId
-   * @returns {object|null}
+   * @returns {Promise<object|null>}
    */
-  getFactor (measurementId, factorId) {
-    const row = this.database.prepare(
-      'SELECT * FROM factors WHERE id = ? AND measurement_id = ?'
-    ).get(factorId, measurementId)
+  async getFactor (measurementId, factorId) {
+    const rows = await this.database.query(`
+      MATCH (f:Factor { id: $factorId, measurementId: $measurementId })
+      OPTIONAL MATCH (mod:Modifier)-[:MODIFIES]->(f)
+      RETURN f,
+             collect(CASE WHEN mod IS NOT NULL THEN mod END) AS modifiers
+    `, { factorId, measurementId })
 
     let result = null
 
-    if (row) {
-      const modifierRows = this.database.prepare(
-        'SELECT * FROM modifiers WHERE factor_id = ?'
-      ).all(factorId)
+    if (rows.length > 0) {
+      const row = rows[0]
+      const f = row.f
 
       result = {
-        id: row.id,
-        nodeId: row.node_id,
-        path: JSON.parse(row.path),
-        value: row.value,
-        label: row.label,
-        modifiers: modifierRows.map(m => ({
-          id: m.id,
-          type: m.type,
-          effect: m.effect,
-          application: m.application,
-          value: m.value,
-          label: m.label,
-          metadata: JSON.parse(m.metadata)
-        })),
-        metadata: JSON.parse(row.metadata)
+        id: f.id,
+        nodeId: f.nodeId,
+        path: JSON.parse(f.path),
+        value: f.value,
+        label: f.label,
+        modifiers: row.modifiers
+          .filter(m => m != null)
+          .map(m => ({
+            id: m.id,
+            type: m.type,
+            effect: m.effect,
+            application: m.application,
+            value: m.value,
+            label: m.label,
+            metadata: JSON.parse(m.metadata)
+          })),
+        metadata: JSON.parse(f.metadata)
       }
     }
 
@@ -336,17 +329,44 @@ export class MeasurementStore {
   }
 
   /**
-   * List all factors for a measurement.
+   * List all factors for a measurement, each with modifiers.
+   * Single query eliminates the N+1 pattern.
    *
    * @param {string} measurementId
-   * @returns {object[]}
+   * @returns {Promise<object[]>}
    */
-  listFactors (measurementId) {
-    const rows = this.database.prepare(
-      'SELECT id FROM factors WHERE measurement_id = ? ORDER BY rowid'
-    ).all(measurementId)
+  async listFactors (measurementId) {
+    const rows = await this.database.query(`
+      MATCH (f:Factor { measurementId: $measurementId })
+      OPTIONAL MATCH (mod:Modifier)-[:MODIFIES]->(f)
+      RETURN f,
+             collect(CASE WHEN mod IS NOT NULL THEN mod END) AS modifiers
+      ORDER BY f.id
+    `, { measurementId })
 
-    const result = rows.map(row => this.getFactor(measurementId, row.id))
+    const result = rows.map(row => {
+      const f = row.f
+      return {
+        id: f.id,
+        nodeId: f.nodeId,
+        path: JSON.parse(f.path),
+        value: f.value,
+        label: f.label,
+        modifiers: row.modifiers
+          .filter(m => m != null)
+          .map(m => ({
+            id: m.id,
+            type: m.type,
+            effect: m.effect,
+            application: m.application,
+            value: m.value,
+            label: m.label,
+            metadata: JSON.parse(m.metadata)
+          })),
+        metadata: JSON.parse(f.metadata)
+      }
+    })
+
     return result
   }
 
@@ -356,55 +376,60 @@ export class MeasurementStore {
    * @param {string} measurementId
    * @param {string} factorId
    * @param {object} input - UpdateFactorRequest fields
-   * @returns {object|null}
+   * @returns {Promise<object|null>}
    */
-  updateFactor (measurementId, factorId, input) {
-    const existing = this.getFactor(measurementId, factorId)
+  async updateFactor (measurementId, factorId, input) {
+    const existing = await this.getFactor(measurementId, factorId)
     if (!existing) {
       return null
     }
 
-    const updates = []
-    const parameters = []
+    const setClauses = []
+    const parameters = { factorId, measurementId }
 
     if (input.value != null) {
-      updates.push('value = ?')
-      parameters.push(input.value)
+      setClauses.push('f.value = $newValue')
+      parameters.newValue = input.value
     }
 
     if (input.label != null) {
-      updates.push('label = ?')
-      parameters.push(input.label)
+      setClauses.push('f.label = $newLabel')
+      parameters.newLabel = input.label
     }
 
     if (input.metadata != null) {
-      updates.push('metadata = ?')
-      parameters.push(JSON.stringify(input.metadata))
+      setClauses.push('f.metadata = $newMetadata')
+      parameters.newMetadata = JSON.stringify(input.metadata)
     }
 
-    if (updates.length > 0) {
-      parameters.push(factorId, measurementId)
-      this.database.prepare(
-        `UPDATE factors SET ${updates.join(', ')} WHERE id = ? AND measurement_id = ?`
-      ).run(...parameters)
+    if (setClauses.length > 0) {
+      await this.database.query(
+        `MATCH (f:Factor { id: $factorId, measurementId: $measurementId })
+         SET ${setClauses.join(', ')}`,
+        parameters
+      )
     }
 
-    const result = this.getFactor(measurementId, factorId)
+    const result = await this.getFactor(measurementId, factorId)
     return result
   }
 
   /**
-   * Delete a factor.
+   * Delete a factor and its modifiers.
    *
    * @param {string} measurementId
    * @param {string} factorId
-   * @returns {boolean}
+   * @returns {Promise<boolean>}
    */
-  deleteFactor (measurementId, factorId) {
-    const info = this.database.prepare(
-      'DELETE FROM factors WHERE id = ? AND measurement_id = ?'
-    ).run(factorId, measurementId)
-    const result = info.changes > 0
+  async deleteFactor (measurementId, factorId) {
+    const rows = await this.database.query(`
+      MATCH (f:Factor { id: $factorId, measurementId: $measurementId })
+      OPTIONAL MATCH (mod:Modifier)-[:MODIFIES]->(f)
+      DETACH DELETE mod, f
+      RETURN true AS deleted
+    `, { factorId, measurementId })
+
+    const result = rows.length > 0
     return result
   }
 
@@ -418,10 +443,10 @@ export class MeasurementStore {
    * @param {string} measurementId
    * @param {string} factorId
    * @param {object} input - AddModifierRequest
-   * @returns {object|null}
+   * @returns {Promise<object|null>}
    */
-  addModifier (measurementId, factorId, input) {
-    const factor = this.getFactor(measurementId, factorId)
+  async addModifier (measurementId, factorId, input) {
+    const factor = await this.getFactor(measurementId, factorId)
     if (!factor) {
       return null
     }
@@ -439,23 +464,33 @@ export class MeasurementStore {
 
     const modifierId = this._modifierId()
 
-    this.database.prepare(`
-      INSERT INTO modifiers (id, factor_id, measurement_id, type, effect, application, value, label, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      modifierId,
+    await this.database.query(`
+      MATCH (f:Factor { id: $factorId, measurementId: $measurementId })
+      CREATE (mod:Modifier {
+        id:            $modifierId,
+        factorId:      $factorId,
+        measurementId: $measurementId,
+        type:          $type,
+        effect:        $effect,
+        application:   $application,
+        value:         $value,
+        label:         $label,
+        metadata:      $metadata
+      })-[:MODIFIES]->(f)
+    `, {
       factorId,
       measurementId,
-      input.type,
-      input.effect || 'attenuate',
+      modifierId,
+      type: input.type,
+      effect: input.effect || 'attenuate',
       application,
-      input.value,
-      input.label || '',
-      JSON.stringify(input.metadata || {})
-    )
+      value: input.value,
+      label: input.label || '',
+      metadata: JSON.stringify(input.metadata || {})
+    })
 
     // Return the updated factor
-    const result = this.getFactor(measurementId, factorId)
+    const result = await this.getFactor(measurementId, factorId)
     return result
   }
 
@@ -464,13 +499,16 @@ export class MeasurementStore {
    *
    * @param {string} measurementId
    * @param {string} modifierId
-   * @returns {boolean}
+   * @returns {Promise<boolean>}
    */
-  deleteModifier (measurementId, modifierId) {
-    const info = this.database.prepare(
-      'DELETE FROM modifiers WHERE id = ? AND measurement_id = ?'
-    ).run(modifierId, measurementId)
-    const result = info.changes > 0
+  async deleteModifier (measurementId, modifierId) {
+    const rows = await this.database.query(`
+      MATCH (mod:Modifier { id: $modifierId, measurementId: $measurementId })
+      DETACH DELETE mod
+      RETURN true AS deleted
+    `, { modifierId, measurementId })
+
+    const result = rows.length > 0
     return result
   }
 
@@ -479,27 +517,35 @@ export class MeasurementStore {
   // -------------------------------------------------------------------------
 
   /**
-   * Build the full hierarchy tree for a measurement (used in GET response).
+   * Build the full hierarchy tree for a measurement.
+   *
+   * Single query fetches all nodes, factors, and modifiers, then
+   * assembles the tree in memory.
    *
    * @param {string} measurementId
-   * @returns {object[]} Tree of HierarchyNode objects
+   * @returns {Promise<object[]>} Tree of HierarchyNode objects
    */
-  buildTree (measurementId) {
-    const allNodes = this.database.prepare(
-      'SELECT * FROM nodes WHERE measurement_id = ? ORDER BY sort_order'
-    ).all(measurementId)
+  async buildTree (measurementId) {
+    // Fetch all nodes
+    const nodeRows = await this.database.query(`
+      MATCH (n:HierarchyNode { measurementId: $measurementId })
+      RETURN n
+      ORDER BY n.sortOrder
+    `, { measurementId })
 
-    const allFactors = this.listFactors(measurementId)
+    // Fetch all factors with modifiers in one query
+    const allFactors = await this.listFactors(measurementId)
 
     const nodeMap = new Map()
-    for (const node of allNodes) {
-      nodeMap.set(node.id, {
-        id: node.id,
-        level: node.level,
-        label: node.label,
+    for (const row of nodeRows) {
+      const n = row.n
+      nodeMap.set(n.id, {
+        id: n.id,
+        level: n.level,
+        label: n.label,
         children: [],
         factors: [],
-        metadata: JSON.parse(node.metadata)
+        metadata: JSON.parse(n.metadata)
       })
     }
 
@@ -511,14 +557,15 @@ export class MeasurementStore {
       }
     }
 
-    // Build parent→child relationships
+    // Build parent→child relationships using parentId property
     const roots = []
-    for (const node of allNodes) {
-      const mapped = nodeMap.get(node.id)
-      if (node.parent_id == null) {
+    for (const row of nodeRows) {
+      const n = row.n
+      const mapped = nodeMap.get(n.id)
+      if (n.parentId === 'none') {
         roots.push(mapped)
       } else {
-        const parent = nodeMap.get(node.parent_id)
+        const parent = nodeMap.get(n.parentId)
         if (parent) {
           parent.children.push(mapped)
         }
@@ -530,25 +577,236 @@ export class MeasurementStore {
   }
 
   // -------------------------------------------------------------------------
+  // Batch operations
+  // -------------------------------------------------------------------------
+
+  /**
+   * Add multiple factors (with optional inline modifiers) in a single transaction.
+   *
+   * Partial-success semantics: valid items are committed, invalid items are
+   * collected in the errors array.
+   *
+   * @param {string}   measurementId - Parent measurement
+   * @param {object[]} factorInputs  - Array of AddFactorRequest (with optional modifiers[])
+   * @returns {Promise<{ created: number, failed: number, errors: object[] }>}
+   */
+  async addFactorsBatch (measurementId, factorInputs) {
+    const measurement = await this.getMeasurement(measurementId)
+    if (!measurement) {
+      return { created: 0, failed: factorInputs.length, errors: [{ index: -1, message: 'Measurement not found' }] }
+    }
+
+    const levels = measurement.hierarchy.levels
+    let created = 0
+    const errors = []
+
+    // Use a transaction for the entire batch
+    await this.database.transaction(async (transaction) => {
+      for (let index = 0; index < factorInputs.length; index++) {
+        const input = factorInputs[index]
+
+        try {
+          const path = input.path || []
+          const factorId = this._factorId()
+
+          // Ensure hierarchy node path
+          const nodeId = await this._ensureNodePathInTransaction(
+            transaction, measurementId, path, levels
+          )
+
+          // Create the factor
+          await transaction.run(`
+            MATCH (n:HierarchyNode { id: $nodeId })
+            CREATE (f:Factor {
+              id:            $factorId,
+              measurementId: $measurementId,
+              nodeId:        $nodeId,
+              value:         $value,
+              label:         $label,
+              path:          $path,
+              metadata:      $metadata
+            })-[:BELONGS_TO]->(n)
+          `, {
+            nodeId,
+            factorId,
+            measurementId,
+            value: input.value,
+            label: input.label || '',
+            path: JSON.stringify(path),
+            metadata: JSON.stringify(input.metadata || {})
+          })
+
+          // Inline modifiers for this factor
+          if (Array.isArray(input.modifiers)) {
+            for (const modifierInput of input.modifiers) {
+              const modifierId = this._modifierId()
+
+              let application = modifierInput.application
+              if (!application) {
+                if (modifierInput.type === 'confidence') {
+                  application = 'direct'
+                } else if (modifierInput.type === 'control') {
+                  application = 'compound'
+                } else {
+                  application = 'direct'
+                }
+              }
+
+              await transaction.run(`
+                MATCH (f:Factor { id: $factorId })
+                CREATE (mod:Modifier {
+                  id:            $modifierId,
+                  factorId:      $factorId,
+                  measurementId: $measurementId,
+                  type:          $type,
+                  effect:        $effect,
+                  application:   $application,
+                  value:         $value,
+                  label:         $label,
+                  metadata:      $metadata
+                })-[:MODIFIES]->(f)
+              `, {
+                factorId,
+                measurementId,
+                modifierId,
+                type: modifierInput.type,
+                effect: modifierInput.effect || 'attenuate',
+                application,
+                value: modifierInput.value,
+                label: modifierInput.label || '',
+                metadata: JSON.stringify(modifierInput.metadata || {})
+              })
+            }
+          }
+
+          created++
+        } catch (itemError) {
+          errors.push({ index, message: itemError.message })
+        }
+      }
+    })
+
+    const result = { created, failed: errors.length, errors }
+    return result
+  }
+
+  /**
+   * Add multiple modifiers to existing factors in a single transaction.
+   *
+   * @param {string}   measurementId  - Parent measurement
+   * @param {object[]} modifierInputs - Array of { factorId, type, effect, application, value, label, metadata }
+   * @returns {Promise<{ created: number, failed: number, errors: object[] }>}
+   */
+  async addModifiersBatch (measurementId, modifierInputs) {
+    let created = 0
+    const errors = []
+
+    await this.database.transaction(async (transaction) => {
+      for (let index = 0; index < modifierInputs.length; index++) {
+        const input = modifierInputs[index]
+
+        try {
+          let application = input.application
+          if (!application) {
+            if (input.type === 'confidence') {
+              application = 'direct'
+            } else if (input.type === 'control') {
+              application = 'compound'
+            } else {
+              application = 'direct'
+            }
+          }
+
+          const modifierId = this._modifierId()
+
+          const result = await transaction.run(`
+            MATCH (f:Factor { id: $factorId, measurementId: $measurementId })
+            CREATE (mod:Modifier {
+              id:            $modifierId,
+              factorId:      $factorId,
+              measurementId: $measurementId,
+              type:          $type,
+              effect:        $effect,
+              application:   $application,
+              value:         $value,
+              label:         $label,
+              metadata:      $metadata
+            })-[:MODIFIES]->(f)
+            RETURN mod.id AS modifierId
+          `, {
+            factorId: input.factorId,
+            measurementId,
+            modifierId,
+            type: input.type,
+            effect: input.effect || 'attenuate',
+            application,
+            value: input.value,
+            label: input.label || '',
+            metadata: JSON.stringify(input.metadata || {})
+          })
+
+          if (result.records && result.records.length > 0) {
+            created++
+          } else {
+            errors.push({ index, message: `Factor '${input.factorId}' not found` })
+          }
+        } catch (itemError) {
+          errors.push({ index, message: itemError.message })
+        }
+      }
+    })
+
+    const result = { created, failed: errors.length, errors }
+    return result
+  }
+
+  // -------------------------------------------------------------------------
   // Internal helpers
   // -------------------------------------------------------------------------
 
-  _countFactors (measurementId) {
-    const row = this.database.prepare(
-      'SELECT COUNT(*) as count FROM factors WHERE measurement_id = ?'
-    ).get(measurementId)
-    return row.count
-  }
+  /**
+   * ensureNodePath within an explicit transaction (for batch operations).
+   *
+   * @private
+   */
+  async _ensureNodePathInTransaction (transaction, measurementId, path, levels) {
+    if (path.length === 0) {
+      const rootLevel = levels[0] || 'items'
+      const candidateId = this._nodeId()
+      const result = await transaction.run(`
+        MERGE (n:HierarchyNode { measurementId: $measurementId, level: $rootLevel, label: 'root', parentId: 'none' })
+          ON CREATE SET n.id = $candidateId, n.sortOrder = 0, n.metadata = '{}'
+        RETURN n.id AS nodeId
+      `, { measurementId, rootLevel, candidateId })
 
-  _purgeExpired () {
-    const now = new Date().toISOString()
-    this.database.prepare('DELETE FROM measurements WHERE expires_at < ?').run(now)
+      return result.records[0].get('nodeId')
+    }
+
+    let parentId = 'none'
+    let nodeId = null
+
+    for (let depth = 0; depth < path.length; depth++) {
+      const level = levels[depth] || `level_${depth}`
+      const label = path[depth]
+      const candidateId = this._nodeId()
+
+      const result = await transaction.run(`
+        MERGE (n:HierarchyNode { measurementId: $measurementId, level: $level, label: $label, parentId: $parentId })
+          ON CREATE SET n.id = $candidateId, n.sortOrder = 0, n.metadata = '{}'
+        RETURN n.id AS nodeId
+      `, { measurementId, level, label, parentId, candidateId })
+
+      nodeId = result.records[0].get('nodeId')
+      parentId = nodeId
+    }
+
+    return nodeId
   }
 
   /**
    * Close the database connection.
    */
-  close () {
-    this.database.close()
+  async close () {
+    await this.database.disconnect()
   }
 }

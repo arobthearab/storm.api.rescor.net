@@ -118,6 +118,8 @@ export {
 export { RskBuilder, RskVmBuilder, RskRmBuilder } from './builders/RskBuilder.mjs'
 export { IapBuilder } from './builders/IapBuilder.mjs'
 export { NistBuilder } from './builders/NistBuilder.mjs'
+export { Factor, Modifier } from './models/Factor.mjs'
+export { FactorBatch, FactorBatchResult } from './models/FactorBatch.mjs'
 export {
   StormError,
   ValidationError,

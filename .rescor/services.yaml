@@ -1,0 +1,30 @@
+# STORM API — Project Service Definitions
+# Inherits core services (infisical, db2, neo4j) automatically
+
+services:
+  # STORM Neo4j — dedicated graph database for measurement persistence
+  storm-neo4j:
+    type: docker-compose
+    service: neo4j
+    composePath: ./docker-compose.yml
+    healthCheck: http://localhost:17574
+    required: true
+    dependsOn: []
+    startupTimeout: 45000
+    healthCheckInterval: 2000
+    env:
+      NEO4J_AUTH: neo4j/stormdev123
+
+  # STORM API — Express application
+  api:
+    type: npm
+    script: dev
+    required: true
+    dependsOn: [storm-neo4j, infisical]
+    healthCheck: http://localhost:3200/health
+    healthCheckInterval: 3000
+    startupTimeout: 15000
+    env:
+      NEO4J_URI: bolt://localhost:17787
+      NEO4J_DATABASE: neo4j
+      NEO4J_PASSWORD: stormdev123

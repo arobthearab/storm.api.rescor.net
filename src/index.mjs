@@ -4,32 +4,29 @@
  * Wires together:
  * - @rescor/core-db PhaseManager for deployment phase detection
  * - @rescor/core-auth via authentication middleware (dev bypass when isDevelopment)
- * - Express routes for all 22 endpoints
- * - SQLite persistence for measurement sessions
+ * - Express routes for all endpoints (including batch)
+ * - Neo4j persistence for measurement sessions
  *
  * Port: 3200 (per CLAUDE.md)
  */
 
 import express from 'express'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { PhaseManager, PHASES } from '@rescor/core-db'
-import { MeasurementStore } from './persistence/index.mjs'
+import { PhaseManager } from '@rescor/core-db'
+import { MeasurementStore, createDatabase } from './persistence/index.mjs'
 import { createAuthenticationMiddleware, authorize, errorHandler, securityHeaders, requestTracing } from './middleware/index.mjs'
 import {
   createHealthRoutes,
   createMeasurementRoutes,
   createFactorRoutes,
   createModifierRoutes,
+  createBatchRoutes,
   createRskVmRoutes,
   createRskRmRoutes,
   createIapRoutes,
   createNistRoutes
 } from './routes/index.mjs'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = 3200
-const DATABASE_PATH = join(__dirname, '..', 'data', 'storm.db')
 
 /**
  * Bootstrap and start the STORM API server.
@@ -44,12 +41,12 @@ async function start () {
   console.log(`[storm] Phase: ${phaseConfig.phase} (isDevelopment=${phaseConfig.isDevelopment})`)
 
   // -----------------------------------------------------------------------
-  // 2. Persistence — SQLite (in-memory for development, file for others)
+  // 2. Persistence — Neo4j via SessionPerQueryWrapper
   // -----------------------------------------------------------------------
-  const storePath = phaseConfig.isDevelopment ? ':memory:' : DATABASE_PATH
-  const store = new MeasurementStore(storePath)
+  const database = await createDatabase()
+  const store = new MeasurementStore(database)
 
-  console.log(`[storm] Store: ${storePath === ':memory:' ? 'in-memory' : storePath}`)
+  console.log('[storm] Store: Neo4j (SessionPerQueryWrapper)')
 
   // -----------------------------------------------------------------------
   // 3. Authentication middleware
@@ -68,8 +65,8 @@ async function start () {
   // -----------------------------------------------------------------------
   const application = express()
 
-  // Global middleware
-  application.use(express.json())
+  // Global middleware — 10 MB body limit for batch payloads
+  application.use(express.json({ limit: '10mb' }))
   application.use(securityHeaders)
   application.use(requestTracing)
 
@@ -85,6 +82,7 @@ async function start () {
   const measurementRoutes = createMeasurementRoutes({ store })
   const factorRoutes = createFactorRoutes({ store })
   const modifierRoutes = createModifierRoutes({ store })
+  const batchRoutes = createBatchRoutes({ store })
   const rskVmRoutes = createRskVmRoutes()
   const rskRmRoutes = createRskRmRoutes()
   const iapRoutes = createIapRoutes()
@@ -94,6 +92,9 @@ async function start () {
   application.use('/v1/measurements', authenticate, authorize('assessor'), measurementRoutes)
   application.use('/v1/measurements/:measurementId/factors', authenticate, authorize('assessor'), factorRoutes)
   application.use('/v1/measurements/:measurementId/modifiers', authenticate, authorize('assessor'), modifierRoutes)
+
+  // Batch ingestion — assessor role
+  application.use('/v1/measurements/:measurementId', authenticate, authorize('assessor'), batchRoutes)
 
   // RSK/VM — assessor + reviewer
   application.use('/v1/rsk/vm', authenticate, authorize('assessor', 'reviewer'), rskVmRoutes)
@@ -113,12 +114,22 @@ async function start () {
   application.use(errorHandler)
 
   // -----------------------------------------------------------------------
-  // 8. Start server
+  // 8. Start server with graceful shutdown
   // -----------------------------------------------------------------------
-  application.listen(PORT, () => {
+  const server = application.listen(PORT, () => {
     console.log(`[storm] STORM API listening on port ${PORT}`)
-    console.log(`[storm] Endpoints: 22 (2 public, 9 measurement, 6 RSK/VM, 4 RSK/RM, 4 IAP, 1 NIST)`)
+    console.log(`[storm] Endpoints: 24 (2 public, 9 measurement, 2 batch, 6 RSK/VM, 4 RSK/RM, 4 IAP, 1 NIST)`)
   })
+
+  const shutdown = async (signal) => {
+    console.log(`[storm] ${signal} received — shutting down`)
+    server.close()
+    await database.close()
+    process.exit(0)
+  }
+
+  process.on('SIGINT', () => shutdown('SIGINT'))
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
 }
 
 start().catch(error => {

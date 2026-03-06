@@ -239,6 +239,131 @@ export function validateAddModifier (body) {
 }
 
 /**
+ * Maximum items per batch request.
+ */
+const BATCH_LIMIT = 10000
+
+/**
+ * Validate a batch of factors (with optional inline modifiers).
+ *
+ * Expected shape:
+ * ```json
+ * { "factors": [ { "value": 0.7, "path": [...], "modifiers": [...] }, ... ] }
+ * ```
+ *
+ * @param {object} body
+ * @returns {{ factors: object[] }}
+ */
+export function validateFactorBatch (body) {
+  requireBody(body)
+
+  if (!Array.isArray(body.factors)) {
+    throw new ValidationError("'factors' is required and must be an array")
+  }
+
+  if (body.factors.length < 1) {
+    throw new ValidationError("'factors' must contain at least 1 item")
+  }
+
+  if (body.factors.length > BATCH_LIMIT) {
+    throw new ValidationError(`'factors' must contain at most ${BATCH_LIMIT} items`)
+  }
+
+  const factors = body.factors.map((item, index) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new ValidationError(`'factors[${index}]' must be a JSON object`)
+    }
+
+    const value = validateNumber(item, 'value', { required: true, min: 0 })
+
+    let path = item.path
+    if (path != null) {
+      if (!Array.isArray(path)) {
+        throw new ValidationError(`'factors[${index}].path' must be an array of strings`)
+      }
+      for (const segment of path) {
+        if (typeof segment !== 'string') {
+          throw new ValidationError(`'factors[${index}].path' items must be strings`)
+        }
+      }
+    }
+
+    // Validate optional inline modifiers
+    let modifiers
+    if (item.modifiers != null) {
+      if (!Array.isArray(item.modifiers)) {
+        throw new ValidationError(`'factors[${index}].modifiers' must be an array`)
+      }
+      modifiers = item.modifiers.map((modifier, modifierIndex) => {
+        if (!modifier || typeof modifier !== 'object' || Array.isArray(modifier)) {
+          throw new ValidationError(`'factors[${index}].modifiers[${modifierIndex}]' must be a JSON object`)
+        }
+        const type = validateString(modifier, 'type', { required: true })
+        const effect = validateString(modifier, 'effect', { enum: ['attenuate', 'amplify'], defaultValue: 'attenuate' })
+        const application = validateString(modifier, 'application', { enum: ['direct', 'compound'] })
+        const modifierValue = validateNumber(modifier, 'value', { required: true, min: 0, max: 1 })
+        const result = { type, effect, application, value: modifierValue, label: modifier.label, metadata: modifier.metadata }
+        return result
+      })
+    }
+
+    const result = { value, path, label: item.label, metadata: item.metadata }
+    if (modifiers) {
+      result.modifiers = modifiers
+    }
+    return result
+  })
+
+  const result = { factors }
+  return result
+}
+
+/**
+ * Validate a batch of modifiers (assigned to existing factors by factorId).
+ *
+ * Expected shape:
+ * ```json
+ * { "modifiers": [ { "factorId": "...", "type": "...", "value": 0.5 }, ... ] }
+ * ```
+ *
+ * @param {object} body
+ * @returns {{ modifiers: object[] }}
+ */
+export function validateModifierBatch (body) {
+  requireBody(body)
+
+  if (!Array.isArray(body.modifiers)) {
+    throw new ValidationError("'modifiers' is required and must be an array")
+  }
+
+  if (body.modifiers.length < 1) {
+    throw new ValidationError("'modifiers' must contain at least 1 item")
+  }
+
+  if (body.modifiers.length > BATCH_LIMIT) {
+    throw new ValidationError(`'modifiers' must contain at most ${BATCH_LIMIT} items`)
+  }
+
+  const modifiers = body.modifiers.map((item, index) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new ValidationError(`'modifiers[${index}]' must be a JSON object`)
+    }
+
+    const factorId = validateString(item, 'factorId', { required: true })
+    const type = validateString(item, 'type', { required: true })
+    const effect = validateString(item, 'effect', { enum: ['attenuate', 'amplify'], defaultValue: 'attenuate' })
+    const application = validateString(item, 'application', { enum: ['direct', 'compound'] })
+    const value = validateNumber(item, 'value', { required: true, min: 0, max: 1 })
+
+    const result = { factorId, type, effect, application, value, label: item.label, metadata: item.metadata }
+    return result
+  })
+
+  const result = { modifiers }
+  return result
+}
+
+/**
  * Validate HAM533 request.
  *
  * @param {object} body

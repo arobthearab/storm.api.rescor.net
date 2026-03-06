@@ -16,7 +16,14 @@
  *     .label('SQL Injection')
  *     .path(['External', 'web-server', '192.168.1.1', 'CVE-2024-001'])
  *     .add()
+ *
+ *   // Batch factor submission (89K findings in ~18 requests)
+ *   const batch = storm.measurement(measurement.id).createBatch()
+ *   findings.forEach(f => batch.add({ value: f.probability, path: f.hierarchy, label: f.title }))
+ *   const result = await batch.submit()
  */
+
+import { FactorBatch } from '../models/FactorBatch.mjs'
 
 /**
  * Builder for creating measurement sessions.
@@ -195,6 +202,51 @@ export class MeasurementSession {
   async deleteModifier (modifierId) {
     const result = await this._client.delete(
       `/v1/measurements/${this._measurementId}/modifiers/${modifierId}`
+    )
+    return result
+  }
+
+  // -------------------------------------------------------------------------
+  // Batch operations
+  // -------------------------------------------------------------------------
+
+  /**
+   * Create a FactorBatch for high-throughput factor submission.
+   *
+   * @param {object} [options]
+   * @param {number} [options.chunkSize=5000]  - Factors per request
+   * @param {number} [options.concurrency=3]   - Max concurrent requests
+   * @returns {FactorBatch}
+   */
+  createBatch (options = {}) {
+    const result = new FactorBatch(this._client, this._measurementId, options)
+    return result
+  }
+
+  /**
+   * Submit a batch of factors directly (without using the FactorBatch builder).
+   *
+   * @param {object[]} factors - Array of factor objects
+   * @returns {Promise<object>} Batch result { data: { created, failed, errors }, meta }
+   */
+  async addFactorsBatch (factors) {
+    const result = await this._client.post(
+      `/v1/measurements/${this._measurementId}/factors/batch`,
+      { factors }
+    )
+    return result
+  }
+
+  /**
+   * Submit a batch of modifiers for existing factors.
+   *
+   * @param {object[]} modifiers - Array of { factorId, type, value, ... }
+   * @returns {Promise<object>} Batch result { data: { created, failed, errors }, meta }
+   */
+  async addModifiersBatch (modifiers) {
+    const result = await this._client.post(
+      `/v1/measurements/${this._measurementId}/modifiers/batch`,
+      { modifiers }
     )
     return result
   }

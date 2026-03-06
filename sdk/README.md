@@ -45,6 +45,17 @@ await storm.measurement(measurement.id)
 const full = await storm.measurement(measurement.id).get()
 console.log(full.aggregate.scaled.effective) // e.g. 38
 
+// Batch factor submission (89K findings in ~18 requests)
+const batch = storm.measurement(measurement.id).createBatch()
+findings.forEach(f => batch.add({
+  value: f.probability,
+  path: f.hierarchy,
+  label: f.title,
+  modifiers: f.controls.map(c => ({ type: 'control', value: c.efficacy }))
+}))
+const batchResult = await batch.submit()
+console.log(batchResult.created) // e.g. 89000
+
 // Stateless RSK/VM computation
 const score = await storm.rsk().vm()
   .measurements([80, 60, 40])
@@ -95,16 +106,33 @@ try {
 
 ## API Coverage
 
-All 22 STORM API endpoints are covered:
+All 24 STORM API endpoints are covered:
 
 - **Measurements** — create, get, delete
 - **Factors** — add, list, update, delete
 - **Modifiers** — add, delete
+- **Batch** — factors/batch, modifiers/batch (with SDK auto-chunking: 5K items, 3 concurrent)
 - **RSK/VM** — aggregate, add, normalize, rate, score, limit
 - **RSK/RM** — adjust, sle, dle, assess
 - **IAP** — ham533, crve3, scep, asset-valuation
 - **NIST** — risk-matrix
 - **Health** — health check
+
+## Value Objects
+
+```javascript
+import { Factor, Modifier } from '@rescor/storm-sdk'
+
+// Factor wraps API response data with computed effectiveValue
+const factor = new Factor(apiResponse)
+console.log(factor.effectiveValue) // Base value with all modifiers applied
+
+// FactorBatch auto-chunks and parallelizes large submissions
+import { FactorBatch } from '@rescor/storm-sdk'
+const batch = new FactorBatch(client, measurementId, { chunkSize: 5000, concurrency: 3 })
+batch.addAll(factors)
+const result = await batch.submit()
+```
 
 ## Cross-Language Portability
 

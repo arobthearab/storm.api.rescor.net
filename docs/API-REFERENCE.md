@@ -361,6 +361,97 @@ Returns `204 No Content`.
 
 ---
 
+## Batch Endpoints
+
+High-throughput factor and modifier ingestion. Designed for large-scale scans
+(89K+ findings) where one-at-a-time submission is impractical.
+
+- Maximum **10,000 items** per request.
+- Body limit: **10 MB**.
+- Partial-success semantics: valid items are committed, failures are reported.
+- SDK auto-chunks at 5,000 items with 3 concurrent requests.
+
+---
+
+### `POST /v1/measurements/{measurementId}/factors/batch`
+
+Add up to 10,000 factors in a single request. Each factor can include
+optional inline modifiers.
+
+**Request:**
+
+```json
+{
+  "factors": [
+    {
+      "value": 0.8,
+      "path": ["External", "web-server", "192.168.1.1", "CVE-2024-001"],
+      "label": "SQL Injection",
+      "modifiers": [
+        { "type": "confidence", "value": 0.9, "effect": "attenuate" },
+        { "type": "control", "value": 0.4, "effect": "attenuate" }
+      ]
+    },
+    {
+      "value": 0.6,
+      "label": "XSS Reflected"
+    }
+  ]
+}
+```
+
+**Response (201):**
+
+```json
+{
+  "data": {
+    "created": 2,
+    "failed": 0,
+    "errors": []
+  },
+  "meta": {
+    "measurementId": "msr_abc123...",
+    "submitted": 2,
+    "elapsed": "45ms"
+  }
+}
+```
+
+On partial failure:
+
+```json
+{
+  "data": {
+    "created": 1,
+    "failed": 1,
+    "errors": [
+      { "index": 1, "message": "Invalid factor value" }
+    ]
+  }
+}
+```
+
+---
+
+### `POST /v1/measurements/{measurementId}/modifiers/batch`
+
+Add up to 10,000 modifiers to existing factors.
+
+**Request:**
+
+```json
+{
+  "modifiers": [
+    { "factorId": "fct_abc123", "type": "confidence", "value": 0.8 },
+    { "factorId": "fct_def456", "type": "control", "value": 0.5, "effect": "amplify" }
+  ]
+}
+```
+
+**Response (201):** Same shape as factors/batch — `{ data: { created, failed, errors }, meta }`.
+
+---
+
 ## RSK/VM — Vulnerability Mode
 
 RSK/VM computes composite risk measurements from vulnerability vectors.

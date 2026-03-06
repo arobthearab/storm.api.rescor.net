@@ -1,5 +1,6 @@
 export { createMeasurementRoutes } from './measurements.mjs'
 export { createFactorRoutes, createModifierRoutes } from './factors.mjs'
+export { createBatchRoutes } from './batch.mjs'
 export { createRskVmRoutes } from './rskVm.mjs'
 export { createRskRmRoutes } from './rskRm.mjs'
 export { createIapRoutes } from './iap.mjs'

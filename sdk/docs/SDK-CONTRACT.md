@@ -118,6 +118,7 @@ storm.measurement()           → MeasurementBuilder (create)
 storm.measurement(id)         → MeasurementSession (get/delete/factors/modifiers)
 storm.measurement(id).factor() → FactorBuilder
 storm.measurement(id).modifier(factorId) → ModifierBuilder
+storm.measurement(id).createBatch() → FactorBatch (high-throughput)
 ```
 
 ### Stateless Computation
@@ -143,7 +144,7 @@ Terminal methods (`.create()`, `.add()`, `.aggregate()`, etc.) must:
 
 ## Endpoint Coverage
 
-Every SDK must support all 22 STORM API endpoints:
+Every SDK must support all 24 STORM API endpoints:
 
 ### Session Endpoints (stateful)
 | Method | Path | Builder Terminal |
@@ -157,6 +158,12 @@ Every SDK must support all 22 STORM API endpoints:
 | DELETE | `/v1/measurements/:id/factors/:fid` | `MeasurementSession.deleteFactor()` |
 | POST   | `/v1/measurements/:id/factors/:fid/modifiers` | `ModifierBuilder.add()` |
 | DELETE | `/v1/measurements/:id/modifiers/:mid` | `MeasurementSession.deleteModifier()` |
+
+### Batch Endpoints (high-throughput)
+| Method | Path | Builder Terminal |
+|--------|------|------------------|
+| POST   | `/v1/measurements/:id/factors/batch` | `MeasurementSession.addFactorsBatch()` or `FactorBatch.submit()` |
+| POST   | `/v1/measurements/:id/modifiers/batch` | `MeasurementSession.addModifiersBatch()` |
 
 ### Computation Endpoints (stateless)
 | Method | Path | Builder Terminal |
