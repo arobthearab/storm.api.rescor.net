@@ -17,6 +17,7 @@
     "@rescor/core-db": "file:../core.rescor.net/packages/core-db",
     "@rescor/core-utils": "file:../core.rescor.net/packages/core-utils",
     "express": "^4.21.0",
+    "neo4j-driver": "^6.0.1",
     "uuid": "^11.1.0"
   },
   "devDependencies": {

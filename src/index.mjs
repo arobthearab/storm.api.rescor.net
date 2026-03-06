@@ -124,7 +124,7 @@ async function start () {
   const shutdown = async (signal) => {
     console.log(`[storm] ${signal} received — shutting down`)
     server.close()
-    await database.close()
+    await database.disconnect()
     process.exit(0)
   }
 
