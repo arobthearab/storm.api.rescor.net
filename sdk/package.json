@@ -1,0 +1,22 @@
+{
+  "name": "@rescor/storm-sdk",
+  "version": "0.1.0",
+  "description": "Node.js SDK for the STORM Risk Computation Engine API",
+  "type": "module",
+  "main": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.1"
+  },
+  "keywords": ["rescor", "storm", "risk", "rsk", "sdk"],
+  "license": "UNLICENSED"
+}
