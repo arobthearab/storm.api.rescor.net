@@ -115,7 +115,7 @@ Create a new measurement session.
 ```json
 {
   "data": {
-    "id": "msr_a1b2c3d4",
+    "id": "msr_a1b2c3d4e5f67890a1b2c3d4e5f67890",
     "name": "Q3 2026 Penetration Test",
     "hierarchy": {
       "template": "security_scan",
@@ -144,7 +144,7 @@ and computed aggregates at every level.
 ```json
 {
   "data": {
-    "id": "msr_a1b2c3d4",
+    "id": "msr_a1b2c3d4e5f67890a1b2c3d4e5f67890",
     "name": "Q3 2026 Penetration Test",
     "hierarchy": {
       "template": "security_scan",

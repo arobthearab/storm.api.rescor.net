@@ -93,7 +93,7 @@ export class MeasurementStore {
   // ID generators
   // -------------------------------------------------------------------------
 
-  _measurementId () { return 'msr_' + randomUUID().replace(/-/g, '').slice(0, 16) }
+  _measurementId () { return 'msr_' + randomUUID().replace(/-/g, '') }
   _nodeId ()        { return 'nod_' + randomUUID().replace(/-/g, '').slice(0, 16) }
   _factorId ()      { return 'fct_' + randomUUID().replace(/-/g, '').slice(0, 16) }
   _modifierId ()    { return 'mod_' + randomUUID().replace(/-/g, '').slice(0, 16) }
