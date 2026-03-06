@@ -1,7 +1,28 @@
 # STORM API — Project Service Definitions
-# Inherits core services (infisical, db2, neo4j) automatically
+# Inherits core services from core.rescor.net automatically.
+# Override unused inherited services to prevent unnecessary startup.
 
 services:
+  # ── Disabled inherited services ────────────────────────────────────
+  # STORM only needs infisical + storm-neo4j. Override the rest so the
+  # orchestrator skips them instead of wasting time on health checks.
+  neo4j:
+    type: external
+    healthCheck: tcp://localhost:1
+    required: false
+    startupTimeout: 1000
+  db2:
+    type: external
+    healthCheck: tcp://localhost:1
+    required: false
+    startupTimeout: 1000
+  asr-neo4j:
+    type: external
+    healthCheck: tcp://localhost:1
+    required: false
+    startupTimeout: 1000
+
+  # ── STORM services ────────────────────────────────────────────────
   # STORM Neo4j — dedicated graph database for measurement persistence
   storm-neo4j:
     type: docker-compose
@@ -25,7 +46,3 @@ services:
     healthCheck: http://localhost:3200/health
     healthCheckInterval: 3000
     startupTimeout: 15000
-    env:
-      NEO4J_URI: bolt://localhost:17787
-      NEO4J_DATABASE: neo4j
-      NEO4J_PASSWORD: stormdev123

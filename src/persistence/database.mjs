@@ -75,15 +75,38 @@ class SessionPerQueryWrapper {
 // ────────────────────────────────────────────────────────────────────
 
 export async function createDatabase () {
+  // Load all Neo4j configuration from Infisical via @rescor/core-config.
+  // No process.env reads — Configuration-First Runtime Policy.
+  const { Configuration } = await import('@rescor/core-config')
+
+  const configuration = new Configuration({
+    enableInfisical: true,
+    requireInfisical: false,
+    enableCache: true,
+    infisicalOptions: {
+      projectId: process.env.INFISICAL_PROJECT_ID,
+      coreProjectId: process.env.INFISICAL_CORE_PROJECT_ID,
+      clientId: process.env.INFISICAL_CLIENT_ID,
+      clientSecret: process.env.INFISICAL_CLIENT_SECRET
+    }
+  })
+
+  await configuration.initialize()
+
+  const uri = await configuration.getConfig('neo4j', 'uri') || 'bolt://localhost:17787'
+  const database = await configuration.getConfig('neo4j', 'database') || 'neo4j'
+  const password = await configuration.getConfig('neo4j', 'password')
+
   const operations = new Neo4jOperations({
-    schema: process.env.NEO4J_DATABASE || 'neo4j',
-    uri: process.env.NEO4J_URI || 'bolt://localhost:17787',
-    username: process.env.NEO4J_USERNAME || 'neo4j',
-    password: null // Resolved from Infisical or NEO4J_PASSWORD env
+    schema: database,
+    uri,
+    username: 'neo4j',
+    password,
+    config: configuration
   })
 
   await operations.connect()
-  console.log('[storm] Connected to Neo4j (storm database)')
+  console.log(`[storm] Connected to Neo4j (${database} database)`)
 
   const result = new SessionPerQueryWrapper(operations)
   return result
