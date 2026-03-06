@@ -19,6 +19,7 @@ services:
   api:
     type: npm
     script: dev
+    cwd: ./
     required: true
     dependsOn: [storm-neo4j, infisical]
     healthCheck: http://localhost:3200/health
