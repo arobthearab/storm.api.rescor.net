@@ -13,7 +13,7 @@
 import express from 'express'
 import { PhaseManager } from '@rescor/core-db'
 import { MeasurementStore, createDatabase } from './persistence/index.mjs'
-import { createAuthenticationMiddleware, authorize, errorHandler, securityHeaders, requestTracing } from './middleware/index.mjs'
+import { createAuthenticationMiddleware, authorize, errorHandler, securityHeaders, requestTracing, requestLogger, initialiseRequestLogger, closeRecorder } from './middleware/index.mjs'
 import {
   createHealthRoutes,
   createMeasurementRoutes,
@@ -49,6 +49,15 @@ async function start () {
   console.log('[storm] Store: Neo4j (SessionPerQueryWrapper)')
 
   // -----------------------------------------------------------------------
+  // 2b. Activity Recorder — structured request logging via @rescor/core-utils
+  // -----------------------------------------------------------------------
+  const recorder = initialiseRequestLogger({
+    tee: phaseConfig.isDevelopment
+  })
+
+  console.log(`[storm] Recorder: ${recorder.log} (tee=${recorder.tee})`)
+
+  // -----------------------------------------------------------------------
   // 3. Authentication middleware
   // -----------------------------------------------------------------------
   const authenticate = createAuthenticationMiddleware({
@@ -69,6 +78,7 @@ async function start () {
   application.use(express.json({ limit: '10mb' }))
   application.use(securityHeaders)
   application.use(requestTracing)
+  application.use(requestLogger)
 
   // -----------------------------------------------------------------------
   // 5. Public routes (no auth)
@@ -124,6 +134,7 @@ async function start () {
   const shutdown = async (signal) => {
     console.log(`[storm] ${signal} received — shutting down`)
     server.close()
+    closeRecorder()
     await database.disconnect()
     process.exit(0)
   }
