@@ -7,8 +7,24 @@
  * engine modules — no TestingCenter code, no database, no network.
  *
  * Usage:
- *   node demo/storm-tree-demo.mjs                     # built-in sample data
- *   node demo/storm-tree-demo.mjs path/to/tree.json   # custom tree file
+ *   node demo/storm-tree-demo.mjs                        # built-in sample data
+ *   node demo/storm-tree-demo.mjs path/to/tree.json      # custom tree file
+ *   node demo/storm-tree-demo.mjs --auth                 # authenticate first
+ *   node demo/storm-tree-demo.mjs --auth tree.json       # both
+ *
+ * Authentication (--auth):
+ *   Acquires a JWT from Keycloak before running calculations.
+ *   Credentials are read from environment variables:
+ *
+ *     KEYCLOAK_URL       (default: http://localhost:8080)
+ *     KEYCLOAK_REALM     (default: rescor)
+ *     KEYCLOAK_CLIENT_ID (required)
+ *     KEYCLOAK_CLIENT_SECRET (required for client_credentials grant)
+ *     KEYCLOAK_USERNAME  (required for password grant)
+ *     KEYCLOAK_PASSWORD  (required for password grant)
+ *
+ *   If KEYCLOAK_USERNAME is set, password grant is used;
+ *   otherwise client_credentials grant is used.
  *
  * Output: enriched JSON tree with correct STORM aggregate measurements,
  *         RSK normalized scores, qualitative ratings, annotation
@@ -21,6 +37,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { rskAggregate, rskNormalize, rskUpperBound, rskRate, computeScore } from '../src/engines/rsk.mjs'
 import { computeEffective } from '../src/engines/modifiers.mjs'
+import { decodeToken } from '@rescor/core-auth'
 
 // ════════════════════════════════════════════════════════════════════
 // Constants
@@ -416,12 +433,124 @@ function buildSampleTree () {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// Authentication — optional Keycloak token acquisition
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Parse CLI arguments.
+ *
+ * @param {string[]} argv - process.argv (first 2 entries skipped)
+ * @returns {{ auth: boolean, inputPath: string|null }}
+ */
+function parseArguments (argv) {
+  const args = argv.slice(2)
+  let auth = false
+  let inputPath = null
+
+  for (const arg of args) {
+    if (arg === '--auth') {
+      auth = true
+    } else if (!arg.startsWith('-')) {
+      inputPath = arg
+    }
+  }
+
+  return { auth, inputPath }
+}
+
+/**
+ * Acquire a JWT from Keycloak using either password or client_credentials grant.
+ *
+ * @returns {Promise<{ accessToken: string, claims: object, grantType: string }>}
+ */
+async function acquireToken () {
+  const keycloakUrl = (process.env.KEYCLOAK_URL || 'http://localhost:8080').replace(/\/$/, '')
+  const realm = process.env.KEYCLOAK_REALM || 'rescor'
+  const clientId = process.env.KEYCLOAK_CLIENT_ID
+  const clientSecret = process.env.KEYCLOAK_CLIENT_SECRET
+  const username = process.env.KEYCLOAK_USERNAME
+  const password = process.env.KEYCLOAK_PASSWORD
+
+  if (!clientId) {
+    throw new Error('KEYCLOAK_CLIENT_ID is required when --auth is specified')
+  }
+
+  const tokenUrl = `${keycloakUrl}/realms/${realm}/protocol/openid-connect/token`
+  const params = new URLSearchParams()
+  params.set('client_id', clientId)
+
+  let grantType
+
+  if (username && password) {
+    // Resource Owner Password grant (direct, for dev/testing)
+    grantType = 'password'
+    params.set('grant_type', 'password')
+    params.set('username', username)
+    params.set('password', password)
+    if (clientSecret) {
+      params.set('client_secret', clientSecret)
+    }
+  } else if (clientSecret) {
+    // Client Credentials grant (service-to-service)
+    grantType = 'client_credentials'
+    params.set('grant_type', 'client_credentials')
+    params.set('client_secret', clientSecret)
+  } else {
+    throw new Error(
+      'Provide KEYCLOAK_USERNAME + KEYCLOAK_PASSWORD (password grant) ' +
+      'or KEYCLOAK_CLIENT_SECRET (client_credentials grant)'
+    )
+  }
+
+  console.error(`[storm-demo] Requesting token from ${tokenUrl} (grant_type=${grantType})`)
+
+  const response = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString()
+  })
+
+  if (!response.ok) {
+    const body = await response.text()
+    throw new Error(`Token request failed (${response.status}): ${body}`)
+  }
+
+  const data = await response.json()
+  const accessToken = data.access_token
+  const claims = decodeToken(accessToken)
+
+  console.error(`[storm-demo] Token acquired — sub=${claims?.sub}, expires_in=${data.expires_in}s`)
+
+  const result = { accessToken, claims, grantType }
+  return result
+}
+
+// ════════════════════════════════════════════════════════════════════
 // Main
 // ════════════════════════════════════════════════════════════════════
 
-function main () {
-  const inputPath = process.argv[2]
+async function main () {
+  const { auth, inputPath } = parseArguments(process.argv)
 
+  // ── Optional authentication ───────────────────────────────────
+  let authContext = null
+
+  if (auth) {
+    const tokenResult = await acquireToken()
+    authContext = {
+      grantType: tokenResult.grantType,
+      sub: tokenResult.claims?.sub,
+      preferredUsername: tokenResult.claims?.preferred_username,
+      email: tokenResult.claims?.email,
+      roles: tokenResult.claims?.realm_access?.roles || tokenResult.claims?.roles || [],
+      issuedAt: tokenResult.claims?.iat ? new Date(tokenResult.claims.iat * 1000).toISOString() : null,
+      expiresAt: tokenResult.claims?.exp ? new Date(tokenResult.claims.exp * 1000).toISOString() : null,
+      issuer: tokenResult.claims?.iss
+    }
+    console.error(`[storm-demo] Authenticated as ${authContext.preferredUsername || authContext.sub} (roles: ${authContext.roles.join(', ') || 'none'})`)
+  }
+
+  // ── Load tree ─────────────────────────────────────────────────
   let tree
   if (inputPath) {
     const absolutePath = resolve(inputPath)
@@ -446,6 +575,7 @@ function main () {
     upperBound: rskUpperBound(MAXIMUM_VALUE, SCALING_BASE),
     ratingScale: 'alternate',
     thresholds: { Low: '< 40 RU', Medium: '40–69 RU', High: '≥ 70 RU' },
+    ...(authContext ? { auth: authContext } : {}),
     tree,
     summary
   }
@@ -453,4 +583,7 @@ function main () {
   console.log(JSON.stringify(output, null, 2))
 }
 
-main()
+main().catch(error => {
+  console.error(`[storm-demo] Fatal: ${error.message}`)
+  process.exit(1)
+})
