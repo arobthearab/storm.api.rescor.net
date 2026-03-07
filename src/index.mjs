@@ -12,7 +12,7 @@
 
 import express from 'express'
 import { PhaseManager } from '@rescor/core-db'
-import { MeasurementStore, createDatabase } from './persistence/index.mjs'
+import { MeasurementStore, UserStore, createConfiguration, createDatabase } from './persistence/index.mjs'
 import { createAuthenticationMiddleware, authorize, errorHandler, securityHeaders, requestTracing, requestLogger, initialiseRequestLogger, closeRecorder } from './middleware/index.mjs'
 import {
   createHealthRoutes,
@@ -41,12 +41,14 @@ async function start () {
   console.log(`[storm] Phase: ${phaseConfig.phase} (isDevelopment=${phaseConfig.isDevelopment})`)
 
   // -----------------------------------------------------------------------
-  // 2. Persistence — Neo4j via SessionPerQueryWrapper
+  // 2. Persistence — Neo4j via SessionPerQueryWrapper (shared Configuration)
   // -----------------------------------------------------------------------
-  const database = await createDatabase()
+  const configuration = await createConfiguration()
+  const database = await createDatabase(configuration)
   const store = new MeasurementStore(database)
+  const userStore = new UserStore(database)
 
-  console.log('[storm] Store: Neo4j (SessionPerQueryWrapper)')
+  console.log('[storm] Store: Neo4j (SessionPerQueryWrapper + UserStore)')
 
   // -----------------------------------------------------------------------
   // 2b. Activity Recorder — structured request logging via @rescor/core-utils
@@ -58,15 +60,23 @@ async function start () {
   console.log(`[storm] Recorder: ${recorder.log} (tee=${recorder.tee})`)
 
   // -----------------------------------------------------------------------
-  // 3. Authentication middleware
+  // 3. Authentication middleware (IDP config from Infisical)
   // -----------------------------------------------------------------------
+  let oidcConfig = {}
+
+  if (!phaseConfig.isDevelopment) {
+    const keycloakUrl = await configuration.getConfig('idp', 'base_url')
+    const realm = await configuration.getConfig('idp', 'realm')
+    const audience = await configuration.getConfig('idp', 'client_id')
+
+    oidcConfig = { keycloakUrl, realm, audience }
+    console.log(`[storm] IDP: ${keycloakUrl}/realms/${realm}`)
+  }
+
   const authenticate = createAuthenticationMiddleware({
     phaseManager,
-    oidc: {
-      keycloakUrl: process.env.OIDC_KEYCLOAK_URL,
-      realm: process.env.OIDC_REALM,
-      audience: process.env.OIDC_AUDIENCE
-    }
+    oidc: oidcConfig,
+    userStore
   })
 
   // -----------------------------------------------------------------------

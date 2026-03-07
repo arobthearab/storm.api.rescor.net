@@ -74,9 +74,13 @@ class SessionPerQueryWrapper {
 // createDatabase — connect to Neo4j via core-db, return safe wrapper
 // ────────────────────────────────────────────────────────────────────
 
-export async function createDatabase () {
-  // Load all Neo4j configuration from Infisical via @rescor/core-config.
-  // No process.env reads — Configuration-First Runtime Policy.
+// ────────────────────────────────────────────────────────────────────
+// createConfiguration — shared Infisical Configuration instance
+// Exported so other modules (auth, IDP config) can re-use it without
+// creating a second Infisical connection.
+// ────────────────────────────────────────────────────────────────────
+
+export async function createConfiguration () {
   const { Configuration } = await import('@rescor/core-config')
 
   const configuration = new Configuration({
@@ -92,6 +96,16 @@ export async function createDatabase () {
   })
 
   await configuration.initialize()
+  return configuration
+}
+
+// ────────────────────────────────────────────────────────────────────
+// createDatabase — connect to Neo4j via core-db, return safe wrapper
+// ────────────────────────────────────────────────────────────────────
+
+export async function createDatabase (configuration) {
+  // Load all Neo4j configuration from Infisical via @rescor/core-config.
+  // No process.env reads — Configuration-First Runtime Policy.
 
   const uri = await configuration.getConfig('neo4j', 'uri') || 'bolt://localhost:17787'
   const database = await configuration.getConfig('neo4j', 'database') || 'neo4j'

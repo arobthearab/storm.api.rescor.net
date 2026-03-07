@@ -19,6 +19,9 @@ FOR (f:Factor) REQUIRE f.id IS UNIQUE;
 CREATE CONSTRAINT modifier_id_unique IF NOT EXISTS
 FOR (mod:Modifier) REQUIRE mod.id IS UNIQUE;
 
+CREATE CONSTRAINT user_sub_unique IF NOT EXISTS
+FOR (u:User) REQUIRE u.sub IS UNIQUE;
+
 // ── Performance Indexes ───────────────────────────────────────────
 
 CREATE INDEX factor_measurement_idx IF NOT EXISTS
@@ -32,6 +35,9 @@ FOR (n:HierarchyNode) ON (n.measurementId, n.level, n.label);
 
 CREATE INDEX modifier_factor_idx IF NOT EXISTS
 FOR (mod:Modifier) ON (mod.factorId);
+
+CREATE INDEX user_email_idx IF NOT EXISTS
+FOR (u:User) ON (u.email);
 
 // ── TTL Index for APOC Auto-Purge ─────────────────────────────────
 // APOC TTL looks for nodes with a `ttl` property (epoch millis).

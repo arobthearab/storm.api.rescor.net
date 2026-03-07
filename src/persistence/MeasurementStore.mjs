@@ -66,6 +66,7 @@ export class MeasurementStore {
       CREATE (m:Measurement {
         id:           $id,
         name:         $name,
+        ownerId:      $ownerId,
         template:     $template,
         levels:       $levels,
         scalingBase:  $scalingBase,
@@ -75,9 +76,15 @@ export class MeasurementStore {
         expiresAt:    $expiresAt,
         ttl:          $ttl
       })
+      WITH m
+      FOREACH (_ IN CASE WHEN $ownerId IS NOT NULL THEN [1] ELSE [] END |
+        MERGE (u:User { sub: $ownerId })
+        CREATE (m)-[:OWNED_BY]->(u)
+      )
     `, {
       id,
       name: input.name || '',
+      ownerId: input.ownerId || null,
       template,
       levels: JSON.stringify(levels),
       scalingBase: input.scalingBase || 4,
@@ -114,6 +121,7 @@ export class MeasurementStore {
       result = {
         id: m.id,
         name: m.name,
+        ownerId: m.ownerId || null,
         hierarchy: {
           template: m.template,
           levels: JSON.parse(m.levels)

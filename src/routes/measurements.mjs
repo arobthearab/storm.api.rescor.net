@@ -166,6 +166,7 @@ export function createMeasurementRoutes ({ store }) {
   router.post('/', async (request, response, next) => {
     try {
       const validated = validateCreateMeasurement(request.body)
+      validated.ownerId = request.user?.sub || null
       const measurement = await store.createMeasurement(validated)
       const enriched = await enrichMeasurement(measurement, store)
 

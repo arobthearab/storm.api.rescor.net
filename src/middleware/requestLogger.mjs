@@ -140,6 +140,9 @@ export function requestLogger (request, response, next) {
     const statusCode = response.statusCode
     const { code, severity } = classifyResponse(statusCode)
 
+    // User info is available after authentication middleware executes
+    const user = request.user || null
+
     const responseMetadata = {
       requestId,
       correlationId,
@@ -147,7 +150,10 @@ export function requestLogger (request, response, next) {
       path,
       statusCode,
       durationMilliseconds,
-      contentLength: response.getHeader('content-length') || 0
+      contentLength: response.getHeader('content-length') || 0,
+      user: user?.sub || null,
+      username: user?.preferred_username || null,
+      roles: user?.roles || null
     }
 
     recorder.emit(

@@ -23,6 +23,13 @@ services:
     startupTimeout: 1000
 
   # ── STORM services ────────────────────────────────────────────────
+  # Keycloak identity provider (shared with TestingCenter via docker-compose)
+  keycloak:
+    type: external
+    healthCheck: http://localhost:8080
+    required: false
+    startupTimeout: 30000
+
   # STORM Neo4j — dedicated graph database for measurement persistence
   storm-neo4j:
     type: docker-compose
