@@ -12,7 +12,7 @@
 
 import express from 'express'
 import { PhaseManager } from '@rescor/core-db'
-import { MeasurementStore, UserStore, createConfiguration, createDatabase } from './persistence/index.mjs'
+import { MeasurementStore, LinkageStore, UserStore, createConfiguration, createDatabase } from './persistence/index.mjs'
 import { createAuthenticationMiddleware, authorize, errorHandler, securityHeaders, requestTracing, requestLogger, initialiseRequestLogger, closeRecorder } from './middleware/index.mjs'
 import {
   createHealthRoutes,
@@ -23,7 +23,10 @@ import {
   createRskVmRoutes,
   createRskRmRoutes,
   createIapRoutes,
-  createNistRoutes
+  createNistRoutes,
+  createFrameworkRoutes,
+  createEntityRoutes,
+  createLinkageRoutes
 } from './routes/index.mjs'
 
 const PORT = 3200
@@ -46,9 +49,10 @@ async function start () {
   const configuration = await createConfiguration()
   const database = await createDatabase(configuration)
   const store = new MeasurementStore(database)
+  const linkageStore = new LinkageStore(database)
   const userStore = new UserStore(database)
 
-  console.log('[storm] Store: Neo4j (SessionPerQueryWrapper + UserStore)')
+  console.log('[storm] Store: Neo4j (SessionPerQueryWrapper + LinkageStore + UserStore)')
 
   // -----------------------------------------------------------------------
   // 2b. Activity Recorder — structured request logging via @rescor/core-utils
@@ -104,9 +108,12 @@ async function start () {
   const modifierRoutes = createModifierRoutes({ store })
   const batchRoutes = createBatchRoutes({ store })
   const rskVmRoutes = createRskVmRoutes()
-  const rskRmRoutes = createRskRmRoutes()
+  const rskRmRoutes = createRskRmRoutes({ linkageStore })
   const iapRoutes = createIapRoutes()
   const nistRoutes = createNistRoutes()
+  const frameworkRoutes = createFrameworkRoutes()
+  const entityRoutes = createEntityRoutes({ linkageStore })
+  const linkageRoutes = createLinkageRoutes({ linkageStore })
 
   // Measurement lifecycle — assessor role
   application.use('/v1/measurements', authenticate, authorize('assessor'), measurementRoutes)
@@ -128,6 +135,16 @@ async function start () {
   // NIST — assessor + reviewer
   application.use('/v1/nist', authenticate, authorize('assessor', 'reviewer'), nistRoutes)
 
+  // Frameworks — assessor + reviewer (read-only catalog)
+  application.use('/v1/frameworks', authenticate, authorize('assessor', 'reviewer'), frameworkRoutes)
+
+  // Entities — assessor only (CRUD)
+  application.use('/v1', authenticate, authorize('assessor'), entityRoutes)
+
+  // Linkages + Suggestions — assessor only
+  application.use('/v1/linkages', authenticate, authorize('assessor'), linkageRoutes)
+  application.use('/v1', authenticate, authorize('assessor'), linkageRoutes)
+
   // -----------------------------------------------------------------------
   // 7. Error handler (must be last)
   // -----------------------------------------------------------------------
@@ -138,7 +155,7 @@ async function start () {
   // -----------------------------------------------------------------------
   const server = application.listen(PORT, () => {
     console.log(`[storm] STORM API listening on port ${PORT}`)
-    console.log(`[storm] Endpoints: 24 (2 public, 9 measurement, 2 batch, 6 RSK/VM, 4 RSK/RM, 4 IAP, 1 NIST)`)
+    console.log(`[storm] Endpoints: 62 (2 public, 9 measurement, 2 batch, 6 RSK/VM, 4 RSK/RM, 5 IAP, 1 NIST, 2 framework, 24 entity, 3 linkage, 4 suggestion)`)
   })
 
   const shutdown = async (signal) => {
