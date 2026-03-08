@@ -8,15 +8,15 @@
  */
 
 /**
- * Compute the RSK aggregate measurement from a vector of V-factors.
+ * Compute the raw (pre-ceiling) RSK aggregate from a vector of V-factors.
  *
  * Sorts measurements descending, then applies the proprietary diminishing-weight series.
  *
  * @param {number[]} measurements - Array of risk factor measurements (RU or 0–1)
  * @param {number}   scalingBase  - Geometric decay base (default 4, must be > 1)
- * @returns {number} Ceiling-rounded composite measurement
+ * @returns {number} Full-precision composite measurement (no rounding)
  */
-export function rskAggregate (measurements, scalingBase = 4) {
+export function rskAggregateRaw (measurements, scalingBase = 4) {
   let result = 0
 
   if (measurements.length === 0) {
@@ -30,19 +30,48 @@ export function rskAggregate (measurements, scalingBase = 4) {
     accumulator += sorted[index] / Math.pow(scalingBase, index)
   }
 
-  result = Math.ceil(accumulator)
+  result = accumulator
+  return result
+}
+
+/**
+ * Compute the RSK aggregate measurement from a vector of V-factors.
+ *
+ * Sorts measurements descending, then applies the proprietary diminishing-weight series.
+ * Returns the ceiling-rounded value suitable for scaled (integer RU) output.
+ *
+ * @param {number[]} measurements - Array of risk factor measurements (RU or 0–1)
+ * @param {number}   scalingBase  - Geometric decay base (default 4, must be > 1)
+ * @returns {number} Ceiling-rounded composite measurement
+ */
+export function rskAggregate (measurements, scalingBase = 4) {
+  const result = Math.ceil(rskAggregateRaw(measurements, scalingBase))
+  return result
+}
+
+/**
+ * Compute the raw (pre-ceiling) theoretical upper bound for a given v_max and scaling base.
+ *
+ * @param {number} maximumValue - Maximum single measurement (v_max)
+ * @param {number} scalingBase  - Geometric decay base
+ * @returns {number} Full-precision upper bound (no rounding)
+ */
+export function rskUpperBoundRaw (maximumValue = 100, scalingBase = 4) {
+  const result = maximumValue / (1 - 1 / scalingBase)
   return result
 }
 
 /**
  * Compute the theoretical upper bound for a given v_max and scaling base.
  *
+ * Returns the ceiling-rounded value suitable for scaled (integer RU) output.
+ *
  * @param {number} maximumValue - Maximum single measurement (v_max)
  * @param {number} scalingBase  - Geometric decay base
  * @returns {number} Ceiling-rounded upper bound
  */
 export function rskUpperBound (maximumValue = 100, scalingBase = 4) {
-  const result = Math.ceil(maximumValue / (1 - 1 / scalingBase))
+  const result = Math.ceil(rskUpperBoundRaw(maximumValue, scalingBase))
   return result
 }
 
@@ -117,22 +146,37 @@ export function computeScore (measurements, configuration = {}) {
   const maximumValue = configuration.maximumValue || 100
   const sorted = [...measurements].sort((a, b) => b - a)
 
-  const aggregate = rskAggregate(sorted, scalingBase)
-  const upperBound = rskUpperBound(maximumValue, scalingBase)
+  const isRawScale = sorted.every(value => value <= 1.0)
+  const inputScale = isRawScale ? 1 : maximumValue
 
-  let normalized = rskNormalize(aggregate, maximumValue, scalingBase)
+  const rawAccumulator = rskAggregateRaw(sorted, scalingBase)
+  const rawAggregate = rawAccumulator / inputScale
+  const scaledAggregate = Math.ceil(rawAggregate * maximumValue)
+
+  const rawUpperBound = rskUpperBoundRaw(1, scalingBase)
+  const scaledUpperBound = rskUpperBound(maximumValue, scalingBase)
+
+  const rawNormalized = rawAggregate / rawUpperBound
+  let scaledNormalized = rskNormalize(scaledAggregate, maximumValue, scalingBase)
   if (configuration.precision != null) {
-    normalized = Number(normalized.toFixed(configuration.precision))
+    scaledNormalized = Number(scaledNormalized.toFixed(configuration.precision))
   }
 
-  const { rating } = rskRate(aggregate, { scale: configuration.scale })
+  const { rating } = rskRate(scaledAggregate, { scale: configuration.scale })
 
   const result = {
-    aggregate,
-    normalized,
+    raw: {
+      aggregate: rawAggregate,
+      normalized: rawNormalized,
+      upperBound: rawUpperBound
+    },
+    scaled: {
+      aggregate: scaledAggregate,
+      normalized: scaledNormalized,
+      upperBound: scaledUpperBound
+    },
     rating,
     measurements: sorted,
-    upperBound,
     scalingBase,
     maximumValue
   }
@@ -140,13 +184,13 @@ export function computeScore (measurements, configuration = {}) {
 }
 
 /**
- * Auto-detect whether a value is a probability (0–1) or a percentage (>1).
- * Values > 1.0 are divided by 100.
+ * Normalize a value to raw space (0–1).
+ * Values > 1.0 are assumed to be scaled and are divided by 100.
  *
- * @param {number} value - Raw input value
- * @returns {number} Probability in 0–1 range
+ * @param {number} value - Input value (raw 0–1 or scaled >1)
+ * @returns {number} Value in 0–1 raw space
  */
-export function autoDetectProbability (value) {
+export function normalizeToRaw (value) {
   const result = value > 1.0 ? value / 100 : value
   return result
 }

@@ -7,11 +7,13 @@
 import { describe, it, expect } from 'vitest'
 import {
   rskAggregate,
+  rskAggregateRaw,
   rskUpperBound,
+  rskUpperBoundRaw,
   rskNormalize,
   rskRate,
   computeScore,
-  autoDetectProbability
+  normalizeToRaw
 } from '../../src/engines/rsk.mjs'
 
 describe('rskAggregate', () => {
@@ -58,6 +60,37 @@ describe('rskUpperBound', () => {
   })
 })
 
+describe('rskAggregateRaw', () => {
+  it('should return 0 for empty array', () => {
+    expect(rskAggregateRaw([], 4)).toBe(0)
+  })
+
+  it('should return full-precision accumulator', () => {
+    // 20/1 + 5/4 + 5/16 + 5/64 = 20 + 1.25 + 0.3125 + 0.078125 = 21.640625
+    expect(rskAggregateRaw([20, 5, 5, 5], 4)).toBeCloseTo(21.640625, 10)
+  })
+
+  it('should return value that rskAggregate would ceiling', () => {
+    const raw = rskAggregateRaw([20, 5, 5, 5], 4)
+    expect(Math.ceil(raw)).toBe(rskAggregate([20, 5, 5, 5], 4))
+  })
+})
+
+describe('rskUpperBoundRaw', () => {
+  it('should return full-precision upper bound', () => {
+    // 100 / 0.75 = 133.333...
+    expect(rskUpperBoundRaw(100, 4)).toBeCloseTo(133.3333, 3)
+  })
+
+  it('should return 1.333... for raw mode (vmax=1)', () => {
+    expect(rskUpperBoundRaw(1, 4)).toBeCloseTo(1.3333, 3)
+  })
+
+  it('should return value that rskUpperBound would ceiling', () => {
+    expect(Math.ceil(rskUpperBoundRaw(100, 4))).toBe(rskUpperBound(100, 4))
+  })
+})
+
 describe('rskNormalize', () => {
   it('should normalize 0 → 0', () => {
     expect(rskNormalize(0, 100, 4)).toBe(0)
@@ -101,25 +134,49 @@ describe('rskRate', () => {
 })
 
 describe('computeScore', () => {
-  it('should compute full pipeline', () => {
+  it('should compute full pipeline with dual output', () => {
     const result = computeScore([50, 40, 40, 20, 20, 5, 5, 5, 5, 5])
-    expect(result.aggregate).toBe(63)
+    expect(result.scaled.aggregate).toBe(63)
+    expect(result.scaled.upperBound).toBe(134)
     expect(result.rating).toBe('High')
     expect(result.measurements[0]).toBe(50) // sorted descending
-    expect(result.upperBound).toBe(134)
+    expect(result.raw.aggregate).toBeCloseTo(0.63, 2)
+    expect(result.raw.upperBound).toBeCloseTo(1.3333, 3)
+  })
+
+  it('should handle raw-space inputs correctly', () => {
+    const result = computeScore([0.20, 0.05, 0.05, 0.05])
+    // raw.aggregate IS the raw accumulator (inputScale = 1)
+    expect(result.raw.aggregate).toBeCloseTo(0.21640625, 10)
+    expect(result.raw.upperBound).toBeCloseTo(1.3333, 3)
+    // scaled values multiply up by maximumValue and ceiling
+    expect(result.scaled.aggregate).toBe(22)
+    expect(result.scaled.upperBound).toBe(134)
+    expect(result.rating).toBe('Low')
+  })
+
+  it('should produce identical dual output for equivalent inputs in both spaces', () => {
+    const scaledResult = computeScore([20, 5, 5, 5])
+    const probabilityResult = computeScore([0.20, 0.05, 0.05, 0.05])
+
+    expect(scaledResult.raw.aggregate).toBeCloseTo(probabilityResult.raw.aggregate, 10)
+    expect(scaledResult.scaled.aggregate).toBe(probabilityResult.scaled.aggregate)
+    expect(scaledResult.raw.upperBound).toBeCloseTo(probabilityResult.raw.upperBound, 10)
+    expect(scaledResult.scaled.upperBound).toBe(probabilityResult.scaled.upperBound)
+    expect(scaledResult.rating).toBe(probabilityResult.rating)
   })
 })
 
-describe('autoDetectProbability', () => {
+describe('normalizeToRaw', () => {
   it('should pass through values <= 1.0', () => {
-    expect(autoDetectProbability(0.75)).toBe(0.75)
+    expect(normalizeToRaw(0.75)).toBe(0.75)
   })
 
   it('should convert percentages > 1.0', () => {
-    expect(autoDetectProbability(80)).toBeCloseTo(0.8)
+    expect(normalizeToRaw(80)).toBeCloseTo(0.8)
   })
 
-  it('should handle 1.0 as probability', () => {
-    expect(autoDetectProbability(1.0)).toBe(1.0)
+  it('should handle 1.0 as raw', () => {
+    expect(normalizeToRaw(1.0)).toBe(1.0)
   })
 })
