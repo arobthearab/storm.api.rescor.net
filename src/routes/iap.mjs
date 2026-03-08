@@ -1,81 +1,75 @@
 /**
  * IAP routes — Independent Ancillary Process endpoints.
  *
- * POST /v1/iap/ham533
- * POST /v1/iap/crve3
- * POST /v1/iap/scep
- * POST /v1/iap/asset-valuation
+ * Domain-based endpoints with model selection:
+ *
+ *   POST /v1/iap/threat          { model: 'ham533', ... }
+ *   POST /v1/iap/vulnerability   { model: 'crve3' | 'cvssa', ... }
+ *   POST /v1/iap/control         { model: 'scep', ... }
+ *   POST /v1/iap/asset           { model: 'asset-valuation', ... }
+ *   GET  /v1/iap/transforms      (discovery)
+ *
+ * Each domain has a default model used when 'model' is omitted.
  */
 
 import { Router } from 'express'
-import { ham533, crve3, scep, assetValuation } from '../engines/iap.mjs'
-import {
-  requireBody,
-  validateHam533,
-  validateCrve3,
-  validateScep,
-  validateAssetValuation,
-  validateNumber
-} from '../validators/index.mjs'
+import { resolve, defaultModel, listAll } from '../transforms/index.mjs'
+import { requireBody, validateNumber, validateString } from '../validators/index.mjs'
+import { ValidationError } from '@rescor/core-utils'
+
+/**
+ * Build a domain route handler.
+ *
+ * The handler reads `model` from the body (or uses the domain default),
+ * resolves the Transform class from the registry, and executes it.
+ *
+ * @param {string} domain
+ * @returns {Function} Express route handler
+ */
+function domainHandler (domain) {
+  return (request, response, next) => {
+    try {
+      const body = requireBody(request.body)
+      const modelName = validateString(body, 'model', { defaultValue: defaultModel(domain) })
+
+      const TransformClass = resolve(domain, modelName)
+
+      if (!TransformClass) {
+        throw new ValidationError(`Unknown model '${modelName}' for domain '${domain}'`)
+      }
+
+      const scalingBase = validateNumber(body, 'scalingBase', { exclusiveMin: 1, defaultValue: 4 })
+      const options = { scalingBase }
+
+      const transform = new TransformClass(body, options)
+      const computedResult = transform.execute()
+
+      response.json({
+        data: {
+          ...computedResult,
+          domain,
+          model: modelName
+        }
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+}
 
 export function createIapRoutes () {
   const router = Router()
 
-  // POST /v1/iap/ham533
-  router.post('/ham533', (request, response, next) => {
-    try {
-      const validated = validateHam533(request.body)
-      const computedResult = ham533(validated)
+  // Domain endpoints
+  router.post('/threat', domainHandler('threat'))
+  router.post('/vulnerability', domainHandler('vulnerability'))
+  router.post('/control', domainHandler('control'))
+  router.post('/asset', domainHandler('asset'))
 
-      response.json({ data: computedResult })
-    } catch (error) {
-      next(error)
-    }
-  })
-
-  // POST /v1/iap/crve3
-  router.post('/crve3', (request, response, next) => {
-    try {
-      const body = requireBody(request.body)
-      const validated = validateCrve3(body)
-      const scalingBase = validateNumber(body, 'scalingBase', { exclusiveMin: 1, defaultValue: 4 })
-
-      const computedResult = crve3({ ...validated, scalingBase })
-
-      response.json({ data: computedResult })
-    } catch (error) {
-      next(error)
-    }
-  })
-
-  // POST /v1/iap/scep
-  router.post('/scep', (request, response, next) => {
-    try {
-      const body = requireBody(request.body)
-      const validated = validateScep(body)
-      const scalingBase = validateNumber(body, 'scalingBase', { exclusiveMin: 1, defaultValue: 4 })
-
-      const computedResult = scep({ ...validated, scalingBase })
-
-      response.json({ data: computedResult })
-    } catch (error) {
-      next(error)
-    }
-  })
-
-  // POST /v1/iap/asset-valuation
-  router.post('/asset-valuation', (request, response, next) => {
-    try {
-      const body = requireBody(request.body)
-      const validated = validateAssetValuation(body)
-      const scalingBase = validateNumber(body, 'scalingBase', { exclusiveMin: 1, defaultValue: 4 })
-
-      const computedResult = assetValuation({ ...validated, scalingBase })
-
-      response.json({ data: computedResult })
-    } catch (error) {
-      next(error)
-    }
+  // Discovery — list all registered transforms
+  router.get('/transforms', (request, response) => {
+    const transforms = listAll()
+    response.json({ data: transforms })
   })
 
   return router
