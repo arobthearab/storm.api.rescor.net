@@ -157,7 +157,7 @@ paths:
       description: >
         Returns the complete measurement including hierarchy tree, all factors
         with their modifiers and effective values, and computed aggregates at
-        every hierarchy level. Both probability (0–1) and scaled (integer RU)
+        every hierarchy level. Both raw (0–1) and scaled (integer RU)
         representations are included.
       parameters:
         - $ref: "#/components/parameters/MeasurementId"
@@ -250,7 +250,7 @@ paths:
       description: >
         Returns every V-factor in the measurement with its base value,
         modifiers, accumulated adjustment, and effective measurement.
-        Both probability and scaled representations are included.
+        Both raw and scaled representations are included.
       parameters:
         - $ref: "#/components/parameters/MeasurementId"
       responses:
@@ -1138,6 +1138,10 @@ components:
           default: 4
           description: >
             Aggregation tuning parameter. Default: 4.
+        maximumValue:
+          type: number
+          default: 100
+          description: "v_max — maximum valid base measurement"
 
     AggregateResponse:
       type: object
@@ -1145,11 +1149,28 @@ components:
       properties:
         data:
           type: object
-          required: [aggregate, measurements, scalingBase]
+          required: [raw, scaled, measurements, scalingBase, maximumValue]
           properties:
-            aggregate:
-              type: integer
-              description: "Composite risk measurement (in RU)"
+            raw:
+              type: object
+              description: "Full-precision raw-space values (no rounding)"
+              properties:
+                aggregate:
+                  type: number
+                  description: "Composite measurement in raw space"
+                upperBound:
+                  type: number
+                  description: "Theoretical upper bound in raw space"
+            scaled:
+              type: object
+              description: "Ceiling-rounded integer RU values"
+              properties:
+                aggregate:
+                  type: integer
+                  description: "Composite risk measurement (in RU)"
+                upperBound:
+                  type: integer
+                  description: "Theoretical upper bound (in RU)"
             measurements:
               type: array
               items:
@@ -1157,9 +1178,8 @@ components:
               description: "Input measurements sorted descending"
             scalingBase:
               type: number
-            upperBound:
+            maximumValue:
               type: number
-              description: "Theoretical upper bound for the configured parameters"
 
     # --- RSK/VM Add ---
     AddMeasurementRequest:
@@ -1196,19 +1216,37 @@ components:
       properties:
         data:
           type: object
-          required: [aggregate, measurements]
+          required: [raw, scaled, measurements, scalingBase, maximumValue]
           properties:
-            aggregate:
-              type: integer
-              description: "Updated composite measurement (in RU)"
+            raw:
+              type: object
+              description: "Full-precision raw-space values"
+              properties:
+                aggregate:
+                  type: number
+                  description: "Updated composite in raw space"
+                previousAggregate:
+                  type: number
+                  description: "Previous composite in raw space"
+            scaled:
+              type: object
+              description: "Ceiling-rounded integer RU values"
+              properties:
+                aggregate:
+                  type: integer
+                  description: "Updated composite measurement (in RU)"
+                previousAggregate:
+                  type: integer
+                  description: "Aggregate before adding the new measurement"
             measurements:
               type: array
               items:
                 type: number
               description: "Updated vector sorted descending"
-            previousAggregate:
-              type: integer
-              description: "Aggregate before adding the new measurement"
+            scalingBase:
+              type: number
+            maximumValue:
+              type: number
 
     # --- RSK/VM Normalize ---
     NormalizeRequest:
@@ -1234,16 +1272,34 @@ components:
       properties:
         data:
           type: object
-          required: [normalized, raw, upperBound]
+          required: [raw, scaled, raw, maximumValue, scalingBase]
           properties:
-            normalized:
-              type: number
-              minimum: 0
-              maximum: 100
-              description: "Normalized value: min(100, raw / upperBound × 100)"
+            raw:
+              type: object
+              description: "Full-precision raw-space values"
+              properties:
+                normalized:
+                  type: number
+                  description: "Normalized in raw space (raw / rawUpperBound)"
+                upperBound:
+                  type: number
+                  description: "Upper bound in raw space"
+            scaled:
+              type: object
+              description: "Ceiling-rounded values"
+              properties:
+                normalized:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                  description: "Normalized value: min(100, raw / upperBound × 100)"
+                upperBound:
+                  type: integer
             raw:
               type: number
-            upperBound:
+            maximumValue:
+              type: number
+            scalingBase:
               type: number
 
     # --- RSK/VM Rate ---
@@ -1326,14 +1382,33 @@ components:
       properties:
         data:
           type: object
-          required: [aggregate, normalized, rating, measurements]
+          required: [raw, scaled, rating, measurements, scalingBase, maximumValue]
           properties:
-            aggregate:
-              type: integer
-              description: "Composite measurement (in RU)"
-            normalized:
-              type: number
-              description: "Normalized to 0–100"
+            raw:
+              type: object
+              description: "Full-precision raw-space values"
+              properties:
+                aggregate:
+                  type: number
+                  description: "Composite in raw space"
+                normalized:
+                  type: number
+                  description: "Normalized in raw space (0–1 range)"
+                upperBound:
+                  type: number
+                  description: "Upper bound in raw space"
+            scaled:
+              type: object
+              description: "Ceiling-rounded integer values"
+              properties:
+                aggregate:
+                  type: integer
+                  description: "Composite measurement (in RU)"
+                normalized:
+                  type: number
+                  description: "Normalized to 0–100"
+                upperBound:
+                  type: integer
             rating:
               type: string
               description: "Relative risk level"
@@ -1342,8 +1417,6 @@ components:
               items:
                 type: number
               description: "Input sorted descending"
-            upperBound:
-              type: number
             scalingBase:
               type: number
             maximumValue:
@@ -1366,11 +1439,22 @@ components:
       properties:
         data:
           type: object
-          required: [upperBound]
+          required: [raw, scaled, maximumValue, scalingBase]
           properties:
-            upperBound:
-              type: integer
-              description: "Theoretical upper bound of the composite measurement"
+            raw:
+              type: object
+              description: "Full-precision raw-space values"
+              properties:
+                upperBound:
+                  type: number
+                  description: "Theoretical upper bound in raw space"
+            scaled:
+              type: object
+              description: "Ceiling-rounded integer value"
+              properties:
+                upperBound:
+                  type: integer
+                  description: "Theoretical upper bound of the composite measurement"
             maximumValue:
               type: number
             scalingBase:
@@ -1920,7 +2004,7 @@ components:
           type: number
           minimum: 0
           maximum: 1
-          description: "RSK probability value (0–1)"
+          description: "RSK raw value (0–1)"
         level:
           type: string
           enum: [Very Low, Low, Moderate, High, Very High]
@@ -2156,9 +2240,9 @@ components:
 
     DualMeasurement:
       type: object
-      description: "Risk measurement in both probability and scaled representations"
+      description: "Risk measurement in both raw and scaled representations"
       properties:
-        probability:
+        raw:
           type: object
           properties:
             base:
@@ -2175,7 +2259,7 @@ components:
           properties:
             base:
               type: integer
-              description: "Base measurement in RU (ceil(probability × maximumValue))"
+              description: "Base measurement in RU (ceil(raw × maximumValue))"
             adjustment:
               type: integer
               description: "Total adjustment amount in RU"

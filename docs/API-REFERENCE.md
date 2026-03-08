@@ -22,7 +22,9 @@ All `/v1/*` endpoints require a JWT bearer token:
 Authorization: Bearer <token>
 ```
 
-See [SECURITY.md](SECURITY.md) for OAuth 2.0 / OIDC / mTLS details.
+See [AUTHENTICATION.md](AUTHENTICATION.md) for how to obtain and use tokens
+(including dev-mode bypass). See [SECURITY.md](SECURITY.md) for OAuth 2.0 /
+OIDC / mTLS architecture details.
 
 ---
 
@@ -81,7 +83,7 @@ Custom modifier types may be created with either effect and application mode.
 
 | View | Base | Adjustment | Effective |
 |------|------|------------|-----------|
-| Probability | 1.0 | 0.615625 | 0.384375 |
+| Raw | 1.0 | 0.615625 | 0.384375 |
 | Scaled (v\_max=100) | 100 | 62 | 38 |
 
 ---
@@ -152,7 +154,7 @@ and computed aggregates at every level.
     },
     "configuration": { "scalingBase": 4, "maximumValue": 100 },
     "aggregate": {
-      "probability": { "base": 1.0, "adjustment": 0.615625, "effective": 0.384375 },
+      "raw": { "base": 1.0, "adjustment": 0.615625, "effective": 0.384375 },
       "scaled": { "base": 100, "adjustment": 62, "effective": 38 }
     },
     "tree": [
@@ -161,7 +163,7 @@ and computed aggregates at every level.
         "level": "test",
         "label": "External",
         "aggregate": {
-          "probability": { "base": 1.0, "adjustment": 0.615625, "effective": 0.384375 },
+          "raw": { "base": 1.0, "adjustment": 0.615625, "effective": 0.384375 },
           "scaled": { "base": 100, "adjustment": 62, "effective": 38 }
         },
         "children": [
@@ -196,7 +198,7 @@ and computed aggregates at every level.
                           { "id": "mod_004", "type": "control", "effect": "attenuate", "application": "compound", "value": 0.20, "label": "Parameterized Queries" }
                         ],
                         "measurement": {
-                          "probability": { "base": 1.0, "adjustment": 0.615625, "effective": 0.384375 },
+                          "raw": { "base": 1.0, "adjustment": 0.615625, "effective": 0.384375 },
                           "scaled": { "base": 100, "adjustment": 62, "effective": 38 }
                         }
                       }
@@ -262,7 +264,7 @@ created automatically. Values > 1.0 are auto-detected as percentages (80 → 0.8
     "label": "HTTP endpoint on port 80",
     "modifiers": [],
     "measurement": {
-      "probability": { "base": 1.0, "adjustment": 0.0, "effective": 1.0 },
+      "raw": { "base": 1.0, "adjustment": 0.0, "effective": 1.0 },
       "scaled": { "base": 100, "adjustment": 0, "effective": 100 }
     },
     "metadata": { "cve": "CVE-2025-1234", "cvss": 9.8 }
@@ -292,7 +294,7 @@ List all factors with their modifiers and effective measurements.
         { "id": "mod_002", "type": "control", "effect": "attenuate", "application": "compound", "value": 0.40, "label": "WAF" }
       ],
       "measurement": {
-        "probability": { "base": 1.0, "adjustment": 0.6, "effective": 0.4 },
+        "raw": { "base": 1.0, "adjustment": 0.6, "effective": 0.4 },
         "scaled": { "base": 100, "adjustment": 60, "effective": 40 }
       }
     }
@@ -458,6 +460,17 @@ RSK/VM computes composite risk measurements from vulnerability vectors.
 All assets are assumed to be of equal value, and the threat is assumed to be a
 single hostile agent that is 100% effective.
 
+All RSK/VM endpoints return **dual output** — both raw-space
+(full precision, no rounding) and scaled (ceiling-rounded integer RU) views:
+
+| View | Rounding | Example aggregate | Example upperBound |
+|------|----------|-------------------|-----------------|
+| `raw` | None (full precision) | 0.42830... | 1.3333... |
+| `scaled` | `Math.ceil` | 43 | 134 |
+
+Raw values are derived by dividing the raw accumulator by `maximumValue`.
+Scaled values apply `Math.ceil` for integer RU output.
+
 ### Computation Model
 
 The composite measurement is computed using a **proprietary aggregation algorithm**
@@ -485,10 +498,17 @@ Compute the composite measurement from a risk factor vector.
 ```json
 {
   "data": {
-    "aggregate": 43,
+    "raw": {
+      "aggregate": 0.4283040364583333,
+      "upperBound": 1.3333333333333335
+    },
+    "scaled": {
+      "aggregate": 43,
+      "upperBound": 134
+    },
     "measurements": [40, 10, 5, 5, 5, 5, 5, 5],
     "scalingBase": 4,
-    "upperBound": 134
+    "maximumValue": 100
   }
 }
 ```
@@ -514,15 +534,22 @@ Add a risk factor base measurement to an existing vector and return the updated 
 ```json
 {
   "data": {
-    "aggregate": 33,
+    "raw": {
+      "aggregate": 0.3289713541666667,
+      "previousAggregate": 0.21640625
+    },
+    "scaled": {
+      "aggregate": 33,
+      "previousAggregate": 22
+    },
     "measurements": [30, 20, 5, 5, 5],
-    "previousAggregate": 22
+    "scalingBase": 4,
+    "maximumValue": 100
   }
 }
 ```
 
-The new measurement is inserted and the vector is re-sorted descending. The
-measurement must be between `minimumValue` (default 1) and `maximumValue` (default 100).
+The new measurement is inserted and the vector is re-sorted descending.
 
 ---
 
@@ -547,9 +574,17 @@ $$\text{normalized} = \min\left(100,\ \frac{\text{raw}}{\text{upperBound}} \time
 ```json
 {
   "data": {
-    "normalized": 32.09,
+    "raw": {
+      "normalized": 0.32250000000000006,
+      "upperBound": 1.3333333333333335
+    },
+    "scaled": {
+      "normalized": 32.09,
+      "upperBound": 134
+    },
     "raw": 43,
-    "upperBound": 134
+    "maximumValue": 100,
+    "scalingBase": 4
   }
 }
 ```
@@ -624,11 +659,18 @@ Full RSK/VM pipeline: **aggregate → normalize → rate** in one request.
 ```json
 {
   "data": {
-    "aggregate": 43,
-    "normalized": 32.09,
+    "raw": {
+      "aggregate": 0.4283040364583333,
+      "normalized": 0.32122802734375,
+      "upperBound": 1.3333333333333335
+    },
+    "scaled": {
+      "aggregate": 43,
+      "normalized": 32.09,
+      "upperBound": 134
+    },
     "rating": "Moderate",
     "measurements": [40, 10, 5, 5, 5, 5, 5, 5],
-    "upperBound": 134,
     "scalingBase": 4,
     "maximumValue": 100
   }
@@ -656,7 +698,12 @@ given configuration.
 ```json
 {
   "data": {
-    "upperBound": 134,
+    "raw": {
+      "upperBound": 1.3333333333333335
+    },
+    "scaled": {
+      "upperBound": 134
+    },
     "maximumValue": 100,
     "scalingBase": 4
   }
@@ -784,6 +831,12 @@ Full RSK/RM pipeline: accepts raw IAP inputs (or pre-computed factor values),
 adjusts base measurements, computes the composite measurement, and calculates
 SLE and DLE.
 
+Each of `asset`, `threat`, `vulnerability`, and `control` can be provided as:
+- A **number** (pre-computed 0–1 factor value)
+- An **object** (raw IAP inputs — the transform is auto-invoked)
+- An **entity ID string** (e.g., `"ast_a1b2c3d4e5f67890"` — resolved from the
+  entity graph's `iapDefaults` via LinkageStore)
+
 **Request (with inline IAP inputs):**
 
 ```json
@@ -866,11 +919,50 @@ SLE and DLE.
 IAPs are self-contained assessment models that each produce a normalized 0–1
 factor value. They correspond to the RSK/RM adjustment factors.
 
+IAP endpoints are **domain-based** — you post to the domain (`/threat`,
+`/vulnerability`, `/control`, `/asset`) and optionally specify a `model`
+parameter to select a specific transform. If `model` is omitted, the
+domain's default transform is used.
+
+Every response includes a `domain` and `model` field confirming which
+transform was applied.
+
 ---
 
-### `POST /v1/iap/ham533`
+### `GET /v1/iap/transforms`
 
-**HAM533 — Threat potential assessment.**
+Discover all registered transforms with their domains, default models, and
+factor definitions.
+
+**Response (200):**
+
+```json
+{
+  "data": [
+    {
+      "domain": "threat",
+      "model": "ham533",
+      "isDefault": true,
+      "description": "Hostile Actor Model (5-3-3) threat assessment",
+      "factors": [
+        { "name": "history", "type": "number", "min": 1, "max": 5 },
+        { "name": "access", "type": "number", "min": 1, "max": 3 },
+        { "name": "means", "type": "number", "min": 1, "max": 3 }
+      ]
+    },
+    { "domain": "vulnerability", "model": "crve3", "isDefault": true, "..." : "..." },
+    { "domain": "vulnerability", "model": "cvssa", "isDefault": false, "..." : "..." },
+    { "domain": "control", "model": "scep", "isDefault": true, "..." : "..." },
+    { "domain": "asset", "model": "asset-valuation", "isDefault": true, "..." : "..." }
+  ]
+}
+```
+
+---
+
+### `POST /v1/iap/threat`
+
+**HAM533 — Threat potential assessment** (default model for `threat` domain).
 
 The "533" refers to factor scale maximums: History max 5, Access max 3, Means max 3.
 
@@ -898,16 +990,18 @@ $$\text{probability} = \frac{H \times A \times M}{45} \qquad \text{impact} = \fr
       "access": 2,
       "means": 2,
       "product": 12
-    }
+    },
+    "domain": "threat",
+    "model": "ham533"
   }
 }
 ```
 
 ---
 
-### `POST /v1/iap/crve3`
+### `POST /v1/iap/vulnerability`
 
-**CRVE3 — Vulnerability exposure assessment.**
+**CRVE3 — Vulnerability exposure assessment** (default model for `vulnerability` domain).
 
 Basic component: $C \times R \times V$ (max 27).
 CIA aggregate: proprietary aggregate of C/I/A exposures.
@@ -928,6 +1022,8 @@ Where $\text{ciaMax} = f([3, 3, 3], 4) = 4$ and $\text{basicMax} = 27$.
 }
 ```
 
+An alternate model (`cvssa`) is available by providing `"model": "cvssa"`.
+
 **Response:**
 
 ```json
@@ -937,16 +1033,18 @@ Where $\text{ciaMax} = f([3, 3, 3], 4) = 4$ and $\text{basicMax} = 27$.
     "basic": 8,
     "cia": 3,
     "ciaMax": 4,
-    "basicMax": 27
+    "basicMax": 27,
+    "domain": "vulnerability",
+    "model": "crve3"
   }
 }
 ```
 
 ---
 
-### `POST /v1/iap/scep`
+### `POST /v1/iap/control`
 
-**SCEP — Control efficacy assessment.**
+**SCEP — Control efficacy assessment** (default model for `control` domain).
 
 Per-control effective: $\text{effective} = \text{implemented} \times \text{correction}$.
 Aggregate efficacy: proprietary aggregate of per-control effectives, capped at 1.0.
@@ -968,16 +1066,18 @@ Aggregate efficacy: proprietary aggregate of per-control effectives, capped at 1
 {
   "data": {
     "efficacy": 0.5563,
-    "effectives": [0.72, 0.375]
+    "effectives": [0.72, 0.375],
+    "domain": "control",
+    "model": "scep"
   }
 }
 ```
 
 ---
 
-### `POST /v1/iap/asset-valuation`
+### `POST /v1/iap/asset`
 
-**AsrValuation — Asset value assessment.**
+**AsrValuation — Asset value assessment** (default model for `asset` domain).
 
 $$A = \frac{\text{classification} \times \text{users} \times \text{hvAggregate}}{3 \times 5 \times \text{hvMax}}$$
 
@@ -1005,7 +1105,9 @@ function to produce `hvAggregate`; `hvMax` is the aggregate of all-true values.
       "users": 3,
       "highValueAggregate": 1.3125,
       "highValueMax": 1.984375
-    }
+    },
+    "domain": "asset",
+    "model": "asset-valuation"
   }
 }
 ```
@@ -1169,6 +1271,207 @@ Compute a NIST SP 800-30 risk determination from RSK measurements.
 Custom breakpoints may be provided to adjust the qualitative mapping for
 domain-specific scales (e.g., financial risk may use different impact breakpoints
 than cybersecurity risk).
+
+---
+
+## Frameworks — ATV(1-C) Linkage Catalog
+
+Linkage frameworks define the catalog of asset types, threat classes,
+vulnerability classes, and control families — along with the rules governing
+which types can be linked (e.g., which threats target which asset types).
+
+---
+
+### `GET /v1/frameworks`
+
+List all registered linkage frameworks.
+
+**Response (200):**
+
+```json
+{
+  "data": {
+    "frameworks": [
+      { "name": "nist-800-30", "version": "1.0.0", "description": "NIST SP 800-30 Rev 1 taxonomy", "isDefault": true }
+    ],
+    "default": "nist-800-30"
+  }
+}
+```
+
+---
+
+### `GET /v1/frameworks/{name}`
+
+Full catalog for a specific framework: all types, classes, families, and
+linkage rules.
+
+**Response (200):**
+
+```json
+{
+  "data": {
+    "name": "nist-800-30",
+    "version": "1.0.0",
+    "assetTypes": [ { "id": "ast_type_info_sys", "name": "Information System", "iapDefaults": { "..." : "..." } } ],
+    "threatClasses": [ { "id": "thr_cls_adversarial", "name": "Adversarial", "..." : "..." } ],
+    "vulnerabilityClasses": [ { "id": "vul_cls_technical", "name": "Technical", "..." : "..." } ],
+    "controlFamilies": [ { "id": "ctl_fam_ac", "name": "Access Control (AC)", "..." : "..." } ],
+    "linkageRules": {
+      "TARGETS": [ ["thr_cls_adversarial", "ast_type_info_sys"], "..." ],
+      "EXPLOITED_BY": [ "..." ],
+      "AFFECTS": [ "..." ],
+      "MITIGATES": [ "..." ],
+      "PROTECTS": [ "..." ],
+      "COUNTERS": [ "..." ]
+    }
+  }
+}
+```
+
+---
+
+## Entities — Asset, Threat, Vulnerability, Control CRUD
+
+Four entity types with identical CRUD patterns. Each entity references a
+catalog type from the active framework.
+
+Entity ID prefixes: `ast_`, `thr_`, `vul_`, `ctl_` (16 hex chars).
+
+---
+
+### `POST /v1/assets`   (also `/threats`, `/vulnerabilities`, `/controls`)
+
+Create an entity of the given type.
+
+**Request:**
+
+```json
+{
+  "name": "Production Web Server",
+  "typeId": "ast_type_info_sys",
+  "frameworkId": "nist-800-30"
+}
+```
+
+**Response (201):** `{ "data": { "id": "ast_a1b2c3d4e5f67890", "name": "...", ... } }`
+
+---
+
+### `GET /v1/assets`   (also `/threats`, `/vulnerabilities`, `/controls`)
+
+List all entities of the given type.
+
+---
+
+### `GET /v1/assets/{id}`
+
+Retrieve a single entity by ID.
+
+---
+
+### `PUT /v1/assets/{id}`
+
+Update entity properties (name, metadata).
+
+---
+
+### `DELETE /v1/assets/{id}`
+
+Remove an entity and its linkages. Returns `204`.
+
+---
+
+### `POST /v1/assets/batch`   (also `/threats/batch`, `/vulnerabilities/batch`, `/controls/batch`)
+
+Batch-create entities. Validates all catalog type IDs upfront.
+
+**Request:**
+
+```json
+{
+  "items": [
+    { "name": "Server A", "typeId": "ast_type_info_sys" },
+    { "name": "Server B", "typeId": "ast_type_info_sys" }
+  ]
+}
+```
+
+**Response (201):** `{ "data": { "created": 2, "failed": 0, "errors": [], "items": [...] } }`
+
+---
+
+## Linkages — Entity Relationship Management
+
+Create and query relationships between entities. The API validates every
+linkage against the framework's catalog rules (e.g., only threats with a
+TARGETS rule for the asset's type may be linked).
+
+---
+
+### `POST /v1/linkages`
+
+Create a linkage between two entities.
+
+**Request:**
+
+```json
+{
+  "sourceId": "thr_a1b2c3d4e5f67890",
+  "targetId": "ast_b2c3d4e5f67890a1",
+  "relationship": "EXPOSED_TO"
+}
+```
+
+**Response (201):** `{ "data": { "source": "...", "target": "...", "relationship": "EXPOSED_TO" } }`
+
+---
+
+### `GET /v1/linkages`
+
+Query linked entities.
+
+**Query parameters:**
+- `entityId` — (required) the entity whose links to retrieve
+- `direction` — `outgoing` | `incoming` | `both` (default: `both`)
+- `relationship` — filter to a specific relationship type
+
+---
+
+### `DELETE /v1/linkages`
+
+Remove a specific linkage.
+
+**Request:** `{ "sourceId": "...", "targetId": "...", "relationship": "EXPOSED_TO" }`
+
+**Response:** `204 No Content`
+
+---
+
+## Suggestions — Catalog-Driven Recommendations
+
+Suggest potential linkage partners for an entity based on the framework's
+catalog rules.
+
+---
+
+### `GET /v1/assets/{id}/suggestions/threats`
+
+Suggest threats that could target this asset, based on catalog TARGETS rules.
+
+### `GET /v1/assets/{id}/suggestions/vulnerabilities`
+
+Suggest vulnerabilities that could affect this asset. Optional `?threatId=`
+query parameter to narrow via EXPLOITED_BY rules.
+
+### `GET /v1/assets/{id}/suggestions/controls`
+
+Suggest controls that could protect this asset, based on catalog PROTECTS rules.
+
+### `GET /v1/vulnerabilities/{id}/suggestions/controls`
+
+Suggest controls that could mitigate this vulnerability, based on catalog
+MITIGATES rules.
 
 ---
 

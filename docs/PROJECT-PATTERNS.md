@@ -195,8 +195,68 @@ you can use HAM533 without running a full RSK/RM assessment.
 |-----|---------------|--------|--------------|
 | HAM533 | Threat potential $T_p$ | History(1–5), Access(1–3), Means(1–3) | probability, impact |
 | CRVE3 | Vulnerability $V_a$ | Capabilities(1–3), Resources(1–3), Visibility(1–3), C/I/A Exposure(1–3 each) | exposure |
+| CVSSA | Vulnerability $V_a$ | (alternate vulnerability model) | exposure |
 | SCEP | Control $C$ | controls[] (each: implemented 0–1, correction 0–1) | efficacy |
 | AsrValuation | Asset value $A$ | Classification(1–3), Users(1–5), HighValueData(6 categories) | assetValue |
+
+### Transform Architecture
+
+IAPs are implemented as **Transforms** — a class hierarchy that standardizes
+input validation, factor definition, and computation:
+
+```
+Transform (abstract base)
+├── Ham533Transform     (domain: threat, model: ham533)
+├── Crve3Transform      (domain: vulnerability, model: crve3)
+├── CvssaTransform      (domain: vulnerability, model: cvssa)
+├── ScepTransform       (domain: control, model: scep)
+└── AssetValuationTransform (domain: asset, model: asset-valuation)
+```
+
+The **Transform Registry** (`src/transforms/index.mjs`) maps (domain, model)
+pairs to Transform classes. Each domain has a default model used when the
+caller omits the `model` parameter.
+
+API endpoints are **domain-based**: `POST /v1/iap/threat`, `/vulnerability`,
+`/control`, `/asset`. A `GET /v1/iap/transforms` discovery endpoint lists all
+registered transforms.
+
+---
+
+## ATV(1-C) Linkage Framework
+
+The **ATV(1-C)** system models the relationships between Assets, Threats,
+Vulnerabilities, and Controls in a persistent Neo4j graph with catalog-validated
+linkage rules.
+
+### Framework Catalog
+
+A **LinkageFramework** (e.g., NIST 800-30) defines:
+- **Asset types** (e.g., Information System, Network)
+- **Threat classes** (e.g., Adversarial, Environmental)
+- **Vulnerability classes** (e.g., Technical, Operational)
+- **Control families** (e.g., Access Control, Audit)
+- **Linkage rules** — which catalog entries may be linked by which relationships
+
+Catalog nodes carry `iapDefaults` — suggested IAP inputs for that type.
+
+### Entity & Linkage Lifecycle
+
+Instance entities (Asset, Threat, Vulnerability, Control) reference their
+catalog type. Linkages between instances are validated against the catalog rules.
+
+| Layer | Relationships |
+|-------|---------------|
+| Catalog | TARGETS, EXPLOITED_BY, AFFECTS, MITIGATES, PROTECTS, COUNTERS |
+| Instance | EXPOSED_TO, SUSCEPTIBLE_TO, EXPLOITED_VIA, APPLIED_TO, GUARDS |
+| Audit | ASSESSES (Measurement → Asset) |
+
+### Persistence
+
+- **LinkageStore** (`src/persistence/LinkageStore.mjs`) — full CRUD for entities
+  and linkages, batch operations, suggestion queries
+- **Cypher DDL**: `001-constraints.cypher` (14 constraints, 14 indexes),
+  `004-seed-framework-nist80030.cypher` (catalog seed data)
 
 ### HAM533
 
