@@ -14,7 +14,7 @@ import {
   distributedLossExpectancy,
   assess
 } from '../engines/riskMode.mjs'
-import { ham533, crve3, scep, assetValuation } from '../engines/iap.mjs'
+import { resolve } from '../transforms/index.mjs'
 import {
   requireBody,
   validateNumber,
@@ -48,22 +48,88 @@ function validateRiskFactors (body) {
   return riskFactors
 }
 
+/** Entity ID prefix → domain mapping. */
+const ENTITY_PREFIX_TO_DOMAIN = {
+  ast_: 'asset',
+  thr_: 'threat',
+  vul_: 'vulnerability',
+  ctl_: 'control'
+}
+
+/** Domain → entity scalar property name. */
+const DOMAIN_TO_SCALAR = {
+  asset: 'value',
+  threat: 'likelihood',
+  vulnerability: 'exposure',
+  control: 'efficacy'
+}
+
 /**
- * Resolve a field that may be a pre-computed number or a raw IAP object.
+ * Resolve a field that may be a pre-computed number, an entity ID string,
+ * or a raw transform input object.
+ *
+ * - number  → returned as-is
+ * - string  → entity ID lookup from LinkageStore (async)
+ * - object  → run through IAP transform
  */
-function resolveIapInput (value, iapFunction, validatorFunction) {
+async function resolveTransformInput (value, domain, linkageStore) {
   let result = null
 
   if (typeof value === 'number') {
     result = value
+  } else if (typeof value === 'string' && linkageStore) {
+    const prefix = value.slice(0, 4)
+    const entityDomain = ENTITY_PREFIX_TO_DOMAIN[prefix]
+    if (entityDomain === domain) {
+      const getter = 'get' + domain.charAt(0).toUpperCase() + domain.slice(1)
+      const entity = await linkageStore[getter](value)
+      if (entity) {
+        result = entity[DOMAIN_TO_SCALAR[domain]] ?? null
+      }
+    }
   } else if (value && typeof value === 'object') {
-    result = iapFunction(value)
+    const modelName = value.model ?? null
+    const TransformClass = modelName ? resolve(domain, modelName) : resolve(domain, defaultModelForDomain(domain))
+
+    if (TransformClass) {
+      const transform = new TransformClass(value, { scalingBase: value.scalingBase ?? 4 })
+      const output = transform.execute()
+      result = extractDomainScalar(domain, output)
+    }
   }
 
   return result
 }
 
-export function createRskRmRoutes () {
+/**
+ * Default model names per domain — duplicated here to avoid import cycle.
+ */
+function defaultModelForDomain (domain) {
+  const defaults = { threat: 'ham533', vulnerability: 'crve3', control: 'scep', asset: 'asset-valuation' }
+  const result = defaults[domain] ?? null
+  return result
+}
+
+/**
+ * Extract the scalar value from a transform output for the given domain.
+ */
+function extractDomainScalar (domain, output) {
+  let result = 0
+
+  if (domain === 'threat') {
+    result = output.probability
+  } else if (domain === 'vulnerability') {
+    result = output.exposure
+  } else if (domain === 'control') {
+    result = output.efficacy
+  } else if (domain === 'asset') {
+    result = output.assetValue
+  }
+
+  return result
+}
+
+export function createRskRmRoutes ({ linkageStore } = {}) {
   const router = Router()
 
   // POST /v1/rsk/rm/adjust
@@ -115,38 +181,18 @@ export function createRskRmRoutes () {
   })
 
   // POST /v1/rsk/rm/assess
-  router.post('/assess', (request, response, next) => {
+  router.post('/assess', async (request, response, next) => {
     try {
       const body = requireBody(request.body)
       const riskFactors = validateRiskFactors(body)
       const scalingBase = validateNumber(body, 'scalingBase', { exclusiveMin: 1, defaultValue: 4 })
       const maximumValue = validateNumber(body, 'maximumValue', { defaultValue: 100 })
 
-      // Resolve IAP inputs
-      let assetFactor = typeof body.asset === 'number' ? body.asset : null
-      let threatFactor = typeof body.threat === 'number' ? body.threat : null
-      let vulnerabilityFactor = typeof body.vulnerability === 'number' ? body.vulnerability : null
-      let controlFactor = typeof body.control === 'number' ? body.control : null
-
-      if (body.asset && typeof body.asset === 'object') {
-        const avResult = assetValuation(body.asset)
-        assetFactor = avResult.assetValue
-      }
-
-      if (body.threat && typeof body.threat === 'object') {
-        const hamResult = ham533(body.threat)
-        threatFactor = hamResult.probability
-      }
-
-      if (body.vulnerability && typeof body.vulnerability === 'object') {
-        const crveResult = crve3(body.vulnerability)
-        vulnerabilityFactor = crveResult.exposure
-      }
-
-      if (body.control && typeof body.control === 'object') {
-        const scepResult = scep(body.control)
-        controlFactor = scepResult.efficacy
-      }
+      // Resolve IAP inputs via transform registry or entity lookup
+      const assetFactor = await resolveTransformInput(body.asset, 'asset', linkageStore)
+      const threatFactor = await resolveTransformInput(body.threat, 'threat', linkageStore)
+      const vulnerabilityFactor = await resolveTransformInput(body.vulnerability, 'vulnerability', linkageStore)
+      const controlFactor = await resolveTransformInput(body.control, 'control', linkageStore)
 
       const computedResult = assess({
         riskFactors,
@@ -157,6 +203,15 @@ export function createRskRmRoutes () {
         scalingBase,
         maximumValue
       })
+
+      // Optional: link measurement to asset for audit trail
+      if (body.measurementId && typeof body.asset === 'string' && linkageStore) {
+        await linkageStore.database.query(`
+          MATCH (m:Measurement {id: $measurementId})
+          MATCH (a:Asset {id: $assetId})
+          MERGE (m)-[:ASSESSES]->(a)
+        `, { measurementId: body.measurementId, assetId: body.asset })
+      }
 
       response.json({ data: computedResult })
     } catch (error) {
