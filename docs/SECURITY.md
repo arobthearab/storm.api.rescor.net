@@ -86,10 +86,14 @@ Role-Based Access Control using JWT `roles` claim:
 
 | Endpoint Group | admin | assessor | reviewer | auditor |
 |----------------|-------|----------|----------|---------|
+| `POST /v1/measurements/*` | Yes | Yes | No | No |
 | `POST /v1/rsk/vm/*` | Yes | Yes | Yes | No |
 | `POST /v1/rsk/rm/*` | Yes | Yes | No | No |
 | `POST /v1/iap/*` | Yes | Yes | Yes | No |
-| `GET /v1/config/*` | Yes | Yes | Yes | Yes |
+| `POST /v1/nist/*` | Yes | Yes | Yes | No |
+| `GET /v1/frameworks/*` | Yes | Yes | Yes | No |
+| `/v1/assets, threats, vulnerabilities, controls` | Yes | Yes | No | No |
+| `/v1/linkages, suggestions` | Yes | Yes | No | No |
 | `GET /health` | Public | Public | Public | Public |
 
 ### Role Enforcement
@@ -202,6 +206,7 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 
 ## References
 
+- [Authentication Guide](AUTHENTICATION.md) — obtaining tokens, dev bypass, RBAC roles
 - [Core Security Principles](../../core.rescor.net/docs/PROJECT-PATTERNS.md#security-principles)
 - [API Reference](API-REFERENCE.md)
 - [OpenAPI Spec](openapi.yaml)
