@@ -45,3 +45,66 @@ FOR (u:User) ON (u.email);
 
 CREATE INDEX measurement_ttl_idx IF NOT EXISTS
 FOR (m:Measurement) ON (m.ttl);
+
+// ═══════════════════════════════════════════════════════════════════
+// ATV(1-C) Linkage Framework — Catalog + Instance Entities
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Catalog Node Constraints ──────────────────────────────────────
+
+CREATE CONSTRAINT framework_id_unique IF NOT EXISTS
+FOR (fw:Framework) REQUIRE fw.id IS UNIQUE;
+
+CREATE CONSTRAINT asset_type_id_unique IF NOT EXISTS
+FOR (at:AssetType) REQUIRE at.id IS UNIQUE;
+
+CREATE CONSTRAINT threat_class_id_unique IF NOT EXISTS
+FOR (tc:ThreatClass) REQUIRE tc.id IS UNIQUE;
+
+CREATE CONSTRAINT vulnerability_class_id_unique IF NOT EXISTS
+FOR (vc:VulnerabilityClass) REQUIRE vc.id IS UNIQUE;
+
+CREATE CONSTRAINT control_family_id_unique IF NOT EXISTS
+FOR (cf:ControlFamily) REQUIRE cf.id IS UNIQUE;
+
+// ── Instance Node Constraints ─────────────────────────────────────
+
+CREATE CONSTRAINT asset_id_unique IF NOT EXISTS
+FOR (a:Asset) REQUIRE a.id IS UNIQUE;
+
+CREATE CONSTRAINT threat_id_unique IF NOT EXISTS
+FOR (t:Threat) REQUIRE t.id IS UNIQUE;
+
+CREATE CONSTRAINT vulnerability_id_unique IF NOT EXISTS
+FOR (v:Vulnerability) REQUIRE v.id IS UNIQUE;
+
+CREATE CONSTRAINT control_id_unique IF NOT EXISTS
+FOR (c:Control) REQUIRE c.id IS UNIQUE;
+
+// ── Catalog Performance Indexes ───────────────────────────────────
+
+CREATE INDEX asset_type_framework_idx IF NOT EXISTS
+FOR (at:AssetType) ON (at.frameworkId);
+
+CREATE INDEX threat_class_framework_idx IF NOT EXISTS
+FOR (tc:ThreatClass) ON (tc.frameworkId);
+
+CREATE INDEX vulnerability_class_framework_idx IF NOT EXISTS
+FOR (vc:VulnerabilityClass) ON (vc.frameworkId);
+
+CREATE INDEX control_family_framework_idx IF NOT EXISTS
+FOR (cf:ControlFamily) ON (cf.frameworkId);
+
+// ── Instance Performance Indexes ──────────────────────────────────
+
+CREATE INDEX asset_framework_idx IF NOT EXISTS
+FOR (a:Asset) ON (a.frameworkId);
+
+CREATE INDEX threat_framework_idx IF NOT EXISTS
+FOR (t:Threat) ON (t.frameworkId);
+
+CREATE INDEX vulnerability_framework_idx IF NOT EXISTS
+FOR (v:Vulnerability) ON (v.frameworkId);
+
+CREATE INDEX control_framework_idx IF NOT EXISTS
+FOR (c:Control) ON (c.frameworkId);
