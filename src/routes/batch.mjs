@@ -7,7 +7,7 @@
 
 import { Router } from 'express'
 import { NotFoundError } from '@rescor/core-utils'
-import { autoDetectProbability } from '../engines/rsk.mjs'
+import { normalizeToRaw } from '../engines/rsk.mjs'
 import {
   validateFactorBatch,
   validateModifierBatch
@@ -33,11 +33,11 @@ export function createBatchRoutes ({ store }) {
 
       const validated = validateFactorBatch(request.body)
 
-      // Auto-detect probability for each factor
+      // Normalize to raw for each factor
       const normalizedFactors = validated.factors.map(factor => {
         const normalized = {
           ...factor,
-          value: autoDetectProbability(factor.value)
+          value: normalizeToRaw(factor.value)
         }
         return normalized
       })

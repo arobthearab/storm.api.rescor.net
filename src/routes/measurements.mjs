@@ -9,30 +9,30 @@
 import { Router } from 'express'
 import { NotFoundError } from '@rescor/core-utils'
 import { validateCreateMeasurement } from '../validators/index.mjs'
-import { autoDetectProbability, rskAggregate, rskUpperBound } from '../engines/rsk.mjs'
+import { normalizeToRaw, rskAggregateRaw, rskUpperBoundRaw } from '../engines/rsk.mjs'
 import { computeEffective } from '../engines/modifiers.mjs'
 
 /**
- * Build a DualMeasurement from a probability value and maximumValue.
+ * Build a DualMeasurement from a raw value and maximumValue.
  *
- * @param {number} baseProbability      - Base probability (0–1)
- * @param {number} effectiveProbability - Effective probability (0–1)
- * @param {number} maximumValue         - v_max for scaling
+ * @param {number} baseRaw      - Base raw value (0–1)
+ * @param {number} effectiveRaw - Effective raw value (0–1)
+ * @param {number} maximumValue - v_max for scaling
  * @returns {object}
  */
-function buildDualMeasurement (baseProbability, effectiveProbability, maximumValue) {
-  const adjustment = baseProbability - effectiveProbability
+function buildDualMeasurement (baseRaw, effectiveRaw, maximumValue) {
+  const adjustment = baseRaw - effectiveRaw
 
   const result = {
-    probability: {
-      base: baseProbability,
+    raw: {
+      base: baseRaw,
       adjustment,
-      effective: effectiveProbability
+      effective: effectiveRaw
     },
     scaled: {
-      base: Math.ceil(baseProbability * maximumValue),
+      base: Math.ceil(baseRaw * maximumValue),
       adjustment: Math.ceil(adjustment * maximumValue),
-      effective: Math.ceil(effectiveProbability * maximumValue)
+      effective: Math.ceil(effectiveRaw * maximumValue)
     }
   }
   return result
@@ -51,17 +51,17 @@ function computeAggregate (factors, scalingBase, maximumValue) {
     return buildDualMeasurement(0, 0, maximumValue)
   }
 
-  const baseValues = factors.map(factor => autoDetectProbability(factor.value))
+  const baseValues = factors.map(factor => normalizeToRaw(factor.value))
   const effectiveValues = factors.map(factor => {
-    const base = autoDetectProbability(factor.value)
+    const base = normalizeToRaw(factor.value)
     const { effective } = computeEffective(base, factor.modifiers || [], scalingBase)
     return effective
   })
 
-  // For probability mode, use the aggregate scaled to [0,1] via upperBound
-  const upperBound = rskUpperBound(1, scalingBase)
-  const baseAggregate = Math.min(1, rskAggregate(baseValues, scalingBase) / upperBound)
-  const effectiveAggregate = Math.min(1, rskAggregate(effectiveValues, scalingBase) / upperBound)
+  // For raw mode, use the raw aggregate scaled to [0,1] via raw upperBound
+  const upperBound = rskUpperBoundRaw(1, scalingBase)
+  const baseAggregate = Math.min(1, rskAggregateRaw(baseValues, scalingBase) / upperBound)
+  const effectiveAggregate = Math.min(1, rskAggregateRaw(effectiveValues, scalingBase) / upperBound)
 
   const result = buildDualMeasurement(baseAggregate, effectiveAggregate, maximumValue)
   return result
@@ -86,7 +86,7 @@ async function enrichMeasurement (measurement, store) {
 
   // Enrich factors with DualMeasurement
   const enrichedFactors = factors.map(factor => {
-    const base = autoDetectProbability(factor.value)
+    const base = normalizeToRaw(factor.value)
     const { effective } = computeEffective(base, factor.modifiers || [], scalingBase)
     return {
       ...factor,

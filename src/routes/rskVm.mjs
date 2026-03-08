@@ -12,7 +12,9 @@
 import { Router } from 'express'
 import {
   rskAggregate,
+  rskAggregateRaw,
   rskUpperBound,
+  rskUpperBoundRaw,
   rskNormalize,
   rskRate,
   computeScore
@@ -27,19 +29,48 @@ import {
 export function createRskVmRoutes () {
   const router = Router()
 
+  /**
+   * Detect whether an array of measurements is in raw space (all <= 1.0)
+   * and return the input scale factor (1 for raw, maximumValue for scaled).
+   */
+  function detectInputScale (measurements, maximumValue) {
+    const isRawScale = measurements.every(value => value <= 1.0)
+    const result = isRawScale ? 1 : maximumValue
+    return result
+  }
+
   // POST /v1/rsk/vm/aggregate
   router.post('/aggregate', (request, response, next) => {
     try {
       const body = requireBody(request.body)
       const measurements = validateNumberArray(body, 'measurements', { required: true })
       const scalingBase = validateNumber(body, 'scalingBase', { exclusiveMin: 1, defaultValue: 4 })
+      const maximumValue = validateNumber(body, 'maximumValue', { defaultValue: 100 })
 
       const sorted = [...measurements].sort((a, b) => b - a)
-      const aggregate = rskAggregate(sorted, scalingBase)
-      const upperBound = rskUpperBound(Math.max(...sorted), scalingBase)
+      const inputScale = detectInputScale(sorted, maximumValue)
+
+      const rawAccumulator = rskAggregateRaw(sorted, scalingBase)
+      const rawAggregate = rawAccumulator / inputScale
+      const scaledAggregate = Math.ceil(rawAggregate * maximumValue)
+
+      const rawUpperBound = rskUpperBoundRaw(1, scalingBase)
+      const scaledUpperBound = rskUpperBound(maximumValue, scalingBase)
 
       response.json({
-        data: { aggregate, measurements: sorted, scalingBase, upperBound }
+        data: {
+          raw: {
+            aggregate: rawAggregate,
+            upperBound: rawUpperBound
+          },
+          scaled: {
+            aggregate: scaledAggregate,
+            upperBound: scaledUpperBound
+          },
+          measurements: sorted,
+          scalingBase,
+          maximumValue
+        }
       })
     } catch (error) {
       next(error)
@@ -53,18 +84,35 @@ export function createRskVmRoutes () {
       const measurements = validateNumberArray(body, 'measurements', { required: true })
       const measurement = validateNumber(body, 'measurement', { required: true })
       const scalingBase = validateNumber(body, 'scalingBase', { exclusiveMin: 1, defaultValue: 4 })
-      const minimumValue = validateNumber(body, 'minimumValue', { defaultValue: 1 })
       const maximumValue = validateNumber(body, 'maximumValue', { defaultValue: 100 })
 
       const previousSorted = [...measurements].sort((a, b) => b - a)
-      const previousAggregate = rskAggregate(previousSorted, scalingBase)
+      const previousInputScale = detectInputScale(previousSorted, maximumValue)
+      const previousRaw = rskAggregateRaw(previousSorted, scalingBase)
+      const previousRawValue = previousRaw / previousInputScale
+      const previousScaled = Math.ceil(previousRawValue * maximumValue)
 
       const updatedMeasurements = [...measurements, measurement]
       const sorted = updatedMeasurements.sort((a, b) => b - a)
-      const aggregate = rskAggregate(sorted, scalingBase)
+      const inputScale = detectInputScale(sorted, maximumValue)
+      const rawAccumulator = rskAggregateRaw(sorted, scalingBase)
+      const rawAggregate = rawAccumulator / inputScale
+      const scaledAggregate = Math.ceil(rawAggregate * maximumValue)
 
       response.json({
-        data: { aggregate, measurements: sorted, previousAggregate }
+        data: {
+          raw: {
+            aggregate: rawAggregate,
+            previousAggregate: previousRawValue
+          },
+          scaled: {
+            aggregate: scaledAggregate,
+            previousAggregate: previousScaled
+          },
+          measurements: sorted,
+          scalingBase,
+          maximumValue
+        }
       })
     } catch (error) {
       next(error)
@@ -79,11 +127,33 @@ export function createRskVmRoutes () {
       const maximumValue = validateNumber(body, 'maximumValue', { defaultValue: 100 })
       const scalingBase = validateNumber(body, 'scalingBase', { exclusiveMin: 1, defaultValue: 4 })
 
-      const upperBound = rskUpperBound(maximumValue, scalingBase)
-      const normalized = rskNormalize(raw, maximumValue, scalingBase)
+      const rawUpperBound = rskUpperBoundRaw(1, scalingBase)
+      const scaledUpperBound = rskUpperBound(maximumValue, scalingBase)
+
+      // Detect if raw is in raw space (≤ 1.0) or scaled
+      const isRawScale = raw <= 1.0
+      const rawValue = isRawScale ? raw : raw / maximumValue
+      const rawNormalized = rawValue / rawUpperBound
+      const scaledNormalized = rskNormalize(
+        isRawScale ? Math.ceil(raw * maximumValue) : raw,
+        maximumValue,
+        scalingBase
+      )
 
       response.json({
-        data: { normalized, raw, upperBound }
+        data: {
+          raw: {
+            normalized: rawNormalized,
+            upperBound: rawUpperBound
+          },
+          scaled: {
+            normalized: scaledNormalized,
+            upperBound: scaledUpperBound
+          },
+          raw,
+          maximumValue,
+          scalingBase
+        }
       })
     } catch (error) {
       next(error)
@@ -138,10 +208,20 @@ export function createRskVmRoutes () {
       const maximumValue = validateNumber(body, 'maximumValue', { defaultValue: 100 })
       const scalingBase = validateNumber(body, 'scalingBase', { exclusiveMin: 1, defaultValue: 4 })
 
-      const upperBound = rskUpperBound(maximumValue, scalingBase)
+      const rawUpperBound = rskUpperBoundRaw(1, scalingBase)
+      const scaledUpperBound = rskUpperBound(maximumValue, scalingBase)
 
       response.json({
-        data: { upperBound, maximumValue, scalingBase }
+        data: {
+          raw: {
+            upperBound: rawUpperBound
+          },
+          scaled: {
+            upperBound: scaledUpperBound
+          },
+          maximumValue,
+          scalingBase
+        }
       })
     } catch (error) {
       next(error)

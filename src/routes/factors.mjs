@@ -11,7 +11,7 @@
 
 import { Router } from 'express'
 import { NotFoundError } from '@rescor/core-utils'
-import { autoDetectProbability } from '../engines/rsk.mjs'
+import { normalizeToRaw } from '../engines/rsk.mjs'
 import { computeEffective } from '../engines/modifiers.mjs'
 import {
   validateAddFactor,
@@ -23,13 +23,13 @@ import {
  * Build a DualMeasurement for a single factor.
  */
 function buildFactorDual (factor, scalingBase, maximumValue) {
-  const base = autoDetectProbability(factor.value)
+  const base = normalizeToRaw(factor.value)
   const { effective } = computeEffective(base, factor.modifiers || [], scalingBase)
 
   const adjustment = base - effective
 
   const result = {
-    probability: { base, adjustment, effective },
+    raw: { base, adjustment, effective },
     scaled: {
       base: Math.ceil(base * maximumValue),
       adjustment: Math.ceil(adjustment * maximumValue),
@@ -77,8 +77,8 @@ export function createFactorRoutes ({ store }) {
       const measurement = await requireMeasurement(request)
       const validated = validateAddFactor(request.body)
 
-      // Auto-detect probability
-      validated.value = autoDetectProbability(validated.value)
+      // Normalize to raw
+      validated.value = normalizeToRaw(validated.value)
 
       const factor = await store.addFactor(measurement.id, validated)
 
@@ -119,9 +119,9 @@ export function createFactorRoutes ({ store }) {
       const measurement = await requireMeasurement(request)
       const validated = validateUpdateFactor(request.body)
 
-      // Auto-detect probability on value update
+      // Normalize to raw on value update
       if (validated.value != null) {
-        validated.value = autoDetectProbability(validated.value)
+        validated.value = normalizeToRaw(validated.value)
       }
 
       const factor = await store.updateFactor(measurement.id, request.params.factorId, validated)
