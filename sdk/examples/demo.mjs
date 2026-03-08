@@ -72,7 +72,7 @@ async function main () {
     .path(['External', 'Internet', '10.0.1.50', 'SQL Injection'])
     .metadata({ cve: 'CVE-2025-1234', cvss: 9.8, port: 443 })
     .add()
-  show('Factor 1 (SQLi)', `${sqlInjection.id} → base ${sqlInjection.measurement.probability.base}`)
+  show('Factor 1 (SQLi)', `${sqlInjection.id} → base ${sqlInjection.measurement.raw.base}`)
 
   const xss = await session
     .factor()
@@ -81,7 +81,7 @@ async function main () {
     .path(['External', 'Internet', '10.0.1.50', 'XSS'])
     .metadata({ cve: 'CVE-2025-5678', cvss: 6.1, port: 443 })
     .add()
-  show('Factor 2 (XSS)', `${xss.id} → base ${xss.measurement.probability.base}`)
+  show('Factor 2 (XSS)', `${xss.id} → base ${xss.measurement.raw.base}`)
 
   const misconfig = await session
     .factor()
@@ -90,7 +90,7 @@ async function main () {
     .path(['External', 'Internet', '10.0.1.51', 'TLS Misconfiguration'])
     .metadata({ port: 8443 })
     .add()
-  show('Factor 3 (TLS)', `${misconfig.id} → base ${misconfig.measurement.probability.base}`)
+  show('Factor 3 (TLS)', `${misconfig.id} → base ${misconfig.measurement.raw.base}`)
 
   // ── 4. Attach Modifiers ─────────────────────────────────────
   heading('4. Attach Modifiers to SQL Injection factor')
@@ -139,17 +139,17 @@ async function main () {
   const factorArray = Array.isArray(factors) ? factors : []
 
   for (const factor of factorArray) {
-    const probability = factor.measurement?.probability
+    const raw = factor.measurement?.raw
     const modCount = factor.modifiers?.length || 0
     console.log(`  ${factor.id}  ${factor.label}`)
-    console.log(`    base=${probability?.base}  effective=${probability?.effective}  modifiers=${modCount}`)
+    console.log(`    base=${raw?.base}  effective=${raw?.effective}  modifiers=${modCount}`)
   }
 
   // ── 6. Retrieve Full Measurement ────────────────────────────
   heading('6. Full Measurement with Aggregates')
   const full = await session.get()
   show('Factor Count', full.factorCount)
-  show('Aggregate (probability)', full.aggregate.probability)
+  show('Aggregate (raw)', full.aggregate.raw)
   show('Aggregate (scaled)', full.aggregate.scaled)
   console.log(`\n  Hierarchy tree (${full.tree?.length || 0} root nodes):`)
   printTree(full.tree, 2)

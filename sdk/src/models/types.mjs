@@ -121,8 +121,8 @@
 
 /**
  * @typedef {object} DualMeasurement
- * @property {MeasurementView} probability - Probability view (0-1 scale)
- * @property {MeasurementView} scaled      - Scaled view (0-maximumValue)
+ * @property {MeasurementView} raw    - Raw view (0-1 scale)
+ * @property {MeasurementView} scaled - Scaled view (0-maximumValue)
  */
 
 /**

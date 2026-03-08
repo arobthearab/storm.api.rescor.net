@@ -62,14 +62,14 @@ const score = await storm.rsk().vm()
   .score()
 console.log(score.rating) // e.g. "High"
 
-// IAP computation
-const threat = await storm.iap().ham533({
-  capability: 0.8, intent: 0.7, targeting: 0.6
+// IAP computation (domain-based endpoints)
+const threat = await storm.iap().threat({
+  history: 3, access: 2, means: 2
 })
 
 // NIST risk matrix
 const risk = await storm.nist().riskMatrix({
-  likelihood: 'High', impact: 'Moderate'
+  likelihood: 0.35, impact: 0.25
 })
 ```
 
@@ -106,7 +106,7 @@ try {
 
 ## API Coverage
 
-All 24 STORM API endpoints are covered:
+All STORM API endpoints are covered:
 
 - **Measurements** — create, get, delete
 - **Factors** — add, list, update, delete
@@ -114,8 +114,11 @@ All 24 STORM API endpoints are covered:
 - **Batch** — factors/batch, modifiers/batch (with SDK auto-chunking: 5K items, 3 concurrent)
 - **RSK/VM** — aggregate, add, normalize, rate, score, limit
 - **RSK/RM** — adjust, sle, dle, assess
-- **IAP** — ham533, crve3, scep, asset-valuation
+- **IAP** — threat, vulnerability, control, asset (domain-based with model selection), transforms (discovery)
 - **NIST** — risk-matrix
+- **Frameworks** — list, describe
+- **Entities** — CRUD for assets, threats, vulnerabilities, controls (+ batch)
+- **Linkages** — create, query, delete, suggestions
 - **Health** — health check
 
 ## Value Objects

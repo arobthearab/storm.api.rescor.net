@@ -126,7 +126,7 @@ storm.measurement(id).createBatch() → FactorBatch (high-throughput)
 ```
 storm.rsk().vm()  → RskVmBuilder  (aggregate/add/normalize/rate/score/limit)
 storm.rsk().rm()  → RskRmBuilder  (adjust/sle/dle/assess)
-storm.iap()       → IapBuilder    (ham533/crve3/scep/assetValuation)
+storm.iap()       → IapBuilder    (threat/vulnerability/control/asset/transforms)
 storm.nist()      → NistBuilder   (riskMatrix)
 ```
 
@@ -144,7 +144,7 @@ Terminal methods (`.create()`, `.add()`, `.aggregate()`, etc.) must:
 
 ## Endpoint Coverage
 
-Every SDK must support all 24 STORM API endpoints:
+Every SDK must support the STORM API endpoints listed below.
 
 ### Session Endpoints (stateful)
 | Method | Path | Builder Terminal |
@@ -178,11 +178,28 @@ Every SDK must support all 24 STORM API endpoints:
 | POST   | `/v1/rsk/rm/sle` | `RskRmBuilder.sle()` |
 | POST   | `/v1/rsk/rm/dle` | `RskRmBuilder.dle()` |
 | POST   | `/v1/rsk/rm/assess` | `RskRmBuilder.assess()` |
-| POST   | `/v1/iap/ham533` | `IapBuilder.ham533()` |
-| POST   | `/v1/iap/crve3` | `IapBuilder.crve3()` |
-| POST   | `/v1/iap/scep` | `IapBuilder.scep()` |
-| POST   | `/v1/iap/asset-valuation` | `IapBuilder.assetValuation()` |
+| POST   | `/v1/iap/threat` | `IapBuilder.threat()` |
+| POST   | `/v1/iap/vulnerability` | `IapBuilder.vulnerability()` |
+| POST   | `/v1/iap/control` | `IapBuilder.control()` |
+| POST   | `/v1/iap/asset` | `IapBuilder.asset()` |
+| GET    | `/v1/iap/transforms` | `IapBuilder.transforms()` |
 | POST   | `/v1/nist/risk-matrix` | `NistBuilder.riskMatrix()` |
+
+### Framework & Entity Endpoints
+| Method | Path | Builder Terminal |
+|--------|------|------------------|
+| GET    | `/v1/frameworks` | `Storm.frameworks()` |
+| GET    | `/v1/frameworks/:name` | `Storm.framework(name)` |
+| POST   | `/v1/assets` | `Storm.entities().createAsset()` |
+| GET    | `/v1/assets` | `Storm.entities().listAssets()` |
+| GET    | `/v1/assets/:id` | `Storm.entities().getAsset(id)` |
+| PUT    | `/v1/assets/:id` | `Storm.entities().updateAsset(id)` |
+| DELETE | `/v1/assets/:id` | `Storm.entities().deleteAsset(id)` |
+| POST   | `/v1/assets/batch` | `Storm.entities().createAssetsBatch()` |
+| POST   | `/v1/linkages` | `Storm.linkages().create()` |
+| GET    | `/v1/linkages` | `Storm.linkages().query()` |
+| DELETE | `/v1/linkages` | `Storm.linkages().delete()` |
+| GET    | `/v1/assets/:id/suggestions/*` | `Storm.suggestions().forAsset(id)` |
 
 ### Infrastructure Endpoints
 | Method | Path | Method |
