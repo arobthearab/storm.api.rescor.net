@@ -14,12 +14,17 @@
  *
  * Authentication (--auth):
  *   Acquires a JWT from Keycloak before running calculations.
- *   Credentials are read from environment variables:
+ *   Keycloak credentials are loaded from Infisical via @rescor/core-config
+ *   (Configuration-First Runtime Policy).  The .env file must contain
+ *   Infisical bootstrap credentials — see docs/CONFIGURATION.md.
  *
- *     KEYCLOAK_URL       (default: http://localhost:8080)
- *     KEYCLOAK_REALM     (default: rescor)
- *     KEYCLOAK_CLIENT_ID (required)
- *     KEYCLOAK_CLIENT_SECRET (required for client_credentials grant)
+ *   Infisical keys used:
+ *     idp.base_url     → Keycloak base URL  (default: http://localhost:8080)
+ *     idp.realm         → Keycloak realm      (default: rescor)
+ *     idp.client_id     → OIDC client ID      (required)
+ *     idp.client_secret → OIDC client secret   (required for client_credentials)
+ *
+ *   For password grant, set env vars (dev/testing only):
  *     KEYCLOAK_USERNAME  (required for password grant)
  *     KEYCLOAK_PASSWORD  (required for password grant)
  *
@@ -461,13 +466,22 @@ function parseArguments (argv) {
 /**
  * Acquire a JWT from Keycloak using either password or client_credentials grant.
  *
+ * Keycloak connection details are loaded from Infisical via @rescor/core-config.
+ * Only KEYCLOAK_USERNAME / KEYCLOAK_PASSWORD may come from env vars (dev/testing).
+ *
  * @returns {Promise<{ accessToken: string, claims: object, grantType: string }>}
  */
 async function acquireToken () {
-  const keycloakUrl = (process.env.KEYCLOAK_URL || 'http://localhost:8080').replace(/\/$/, '')
-  const realm = process.env.KEYCLOAK_REALM || 'rescor'
-  const clientId = process.env.KEYCLOAK_CLIENT_ID
-  const clientSecret = process.env.KEYCLOAK_CLIENT_SECRET
+  // Load Keycloak config from Infisical (Configuration-First Runtime Policy)
+  const { createConfiguration } = await import('../src/persistence/database.mjs')
+  const configuration = await createConfiguration()
+
+  const keycloakUrl = ((await configuration.getConfig('idp', 'base_url')) || 'http://localhost:8080').replace(/\/$/, '')
+  const realm = (await configuration.getConfig('idp', 'realm')) || 'rescor'
+  const clientId = await configuration.getConfig('idp', 'client_id')
+  const clientSecret = await configuration.getConfig('idp', 'client_secret')
+
+  // Username/password only for dev/testing password grant
   const username = process.env.KEYCLOAK_USERNAME
   const password = process.env.KEYCLOAK_PASSWORD
 

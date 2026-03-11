@@ -2,7 +2,7 @@
 
 Node.js SDK for the [STORM Risk Computation Engine API](../docs/API-REFERENCE.md).
 
-Uses native `fetch` (Node 18+) — zero external HTTP dependencies.
+Uses native `fetch` (Node 20.12+) — zero external HTTP dependencies.
 
 ## Install
 

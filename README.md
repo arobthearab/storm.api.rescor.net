@@ -22,12 +22,22 @@ npm run dev             # Express on :3200
 npm test                # vitest (233 tests)
 ```
 
+## Configuration
+
+All runtime configuration is loaded from **Infisical** at startup.  The only
+environment variables are the Infisical bootstrap credentials in `.env`.
+
+1. Copy `.env.example` → `.env` and fill in Infisical credentials.
+2. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference
+   (bootstrap vars, runtime keys, credential rotation, troubleshooting).
+
 ## Architecture
 
 The API combines **stateless computation** (RSK/VM, RSK/RM, IAP, NIST) with **measurement session persistence** and **entity management** via Neo4j. Computation endpoints carry all inputs per-request; measurement and entity endpoints persist data in a Neo4j graph.
 
 - [docs/API-REFERENCE.md](docs/API-REFERENCE.md) — Endpoint documentation
 - [docs/AUTHENTICATION.md](docs/AUTHENTICATION.md) — Token acquisition, RBAC, dev-mode bypass
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md) — Bootstrap credentials, Infisical keys, rotation
 - [docs/PROJECT-PATTERNS.md](docs/PROJECT-PATTERNS.md) — STORM-specific conventions
 - [docs/SECURITY.md](docs/SECURITY.md) — Authentication, authorization, and gateway integration
 - [docs/openapi.yaml](docs/openapi.yaml) — OpenAPI 3.1 specification
@@ -40,6 +50,7 @@ storm.api.rescor.net/
 │   ├── openapi.yaml         # OpenAPI 3.1 spec
 │   ├── API-REFERENCE.md     # Endpoint reference
 │   ├── AUTHENTICATION.md    # Token & RBAC guide
+│   ├── CONFIGURATION.md     # Bootstrap & runtime config
 │   ├── PROJECT-PATTERNS.md  # STORM-specific patterns
 │   └── SECURITY.md          # Auth & gateway docs
 ├── api/

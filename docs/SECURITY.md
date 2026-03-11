@@ -15,12 +15,15 @@ deployment:
 - Required claims: `sub`, `iss`, `aud`, `exp`, `iat`
 - Custom claims: `roles` (array of RBAC roles), `tenant` (multi-tenant isolation)
 
-**Configuration (via Infisical):**
-```
-OIDC_ISSUER_URL      — e.g., https://login.microsoftonline.com/{tenant}/v2.0
-OIDC_AUDIENCE         — e.g., api://storm.api.rescor.net
-OIDC_JWKS_URI         — Auto-discovered from issuer, or explicit override
-```
+**Configuration (via Infisical — not environment variables):**
+
+| Infisical Section | Key | Description |
+|-------------------|-----|-------------|
+| `oidc` | `issuer_url` | e.g., `https://login.microsoftonline.com/{tenant}/v2.0` |
+| `oidc` | `audience` | e.g., `api://storm.api.rescor.net` |
+| `oidc` | `jwks_uri` | Auto-discovered from issuer, or explicit override |
+
+See [CONFIGURATION.md](CONFIGURATION.md) for full details.
 
 ### 2. JWT Validation
 
@@ -53,11 +56,14 @@ For internal service mesh communication (e.g., ASR API → STORM API):
 - Typically terminated at the API Gateway or load balancer
 - Application receives `x-client-cert-cn` header from gateway
 
-**Configuration:**
-```
-MTLS_ENABLED          — true/false
-MTLS_ALLOWED_CNS      — comma-separated list of allowed certificate CNs
-```
+**Configuration (via Infisical — not environment variables):**
+
+| Infisical Section | Key | Description |
+|-------------------|-----|-------------|
+| `mtls` | `enabled` | `true` / `false` |
+| `mtls` | `allowed_cns` | Comma-separated list of allowed certificate CNs |
+
+See [CONFIGURATION.md](CONFIGURATION.md) for full details.
 
 ### 4. API Key — Gateway-Level Rate Limiting
 
@@ -204,8 +210,22 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 
 ---
 
+## Secrets Management
+
+The STORM API follows the **Configuration-First Runtime Policy** defined in the
+[core project patterns](../../core.rescor.net/docs/PROJECT-PATTERNS.md).  All
+secrets and runtime configuration are stored in **Infisical** and loaded at
+startup via `@rescor/core-config`.  The `.env` file contains only the
+Infisical bootstrap credentials.
+
+See [CONFIGURATION.md](CONFIGURATION.md) for the full list of Infisical keys,
+credential rotation procedures, and troubleshooting.
+
+---
+
 ## References
 
+- [Configuration Guide](CONFIGURATION.md) — bootstrap credentials, Infisical keys, rotation
 - [Authentication Guide](AUTHENTICATION.md) — obtaining tokens, dev bypass, RBAC roles
 - [Core Security Principles](../../core.rescor.net/docs/PROJECT-PATTERNS.md#security-principles)
 - [API Reference](API-REFERENCE.md)

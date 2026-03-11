@@ -3,6 +3,10 @@
 > Practical guide for obtaining and using JWT tokens with the STORM API.
 > For architecture and gateway integration details, see [SECURITY.md](SECURITY.md).
 
+> **Prerequisite:** Infisical bootstrap credentials must be configured in `.env`
+> before the API can load IDP settings.  See [CONFIGURATION.md](CONFIGURATION.md)
+> for setup instructions.
+
 ---
 
 ## Phase Behavior

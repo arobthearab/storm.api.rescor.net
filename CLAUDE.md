@@ -27,7 +27,7 @@ See [docs/PROJECT-PATTERNS.md](docs/PROJECT-PATTERNS.md) for STORM API conventio
 ## Key Facts
 
 - API: Express 4 + @rescor/core-* (ESM `.mjs`, port 3200)
-- Runtime: Node 18+
+- Runtime: Node 20.12+ (native --env-file; no dotenv)
 - Database: Neo4j 5.15 Community — dev container `storm-neo4j` on localhost:17787 (Bolt) / 17574 (HTTP), creds: neo4j/stormdev123
 - Dev container: `docker compose up -d` → `storm-neo4j`
 - Persistence: SessionPerQueryWrapper around @rescor/core-db Neo4jOperations (APOC TTL plugin for auto-purge)
@@ -45,3 +45,5 @@ See [docs/PROJECT-PATTERNS.md](docs/PROJECT-PATTERNS.md) for STORM API conventio
 - SDK: `@rescor/storm-sdk` with Factor/Modifier value objects, FactorBatch (auto-chunk 5K, 3 concurrent)
 - Dev: `npm run dev` (root), `npm run cypher:setup` (seed Neo4j), `npm test` (vitest)
 - Process integration: `rescor process start --project storm` brings up Neo4j then API
+- Env vars: Only Infisical bootstrap creds in `.env` (see `.env.example` and `docs/CONFIGURATION.md`)
+- Allowed env vars: INFISICAL_HOST, INFISICAL_CLIENT_ID, INFISICAL_CLIENT_SECRET, INFISICAL_CORE_PROJECT_ID, INFISICAL_PROJECT_ID, INFISICAL_ENVIRONMENT, PHASE (optional)

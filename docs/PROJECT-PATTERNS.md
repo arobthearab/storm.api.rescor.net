@@ -12,7 +12,7 @@
 |------------|--------------------------------|------|
 | API        | Express 4 + @rescor/core-*     | 3200 |
 | Database   | Neo4j 5.15 Community (APOC)    | 17787 (Bolt) / 17574 (HTTP) |
-| Runtime    | Node 18+ (ESM `.mjs`)         | —    |
+| Runtime    | Node 20.12+ (ESM `.mjs`, native `--env-file`) | —    |
 | Auth       | OAuth 2.0 / OIDC / JWT / mTLS | —    |
 | Gateway    | AWS API Gateway / Azure APIM / GCP Cloud Endpoints | — |
 
