@@ -1142,6 +1142,14 @@ components:
           type: number
           default: 100
           description: "v_max — maximum valid base measurement"
+        inputScale:
+          type: string
+          enum: [raw, scaled]
+          description: >
+            Explicit input-space declaration. 'raw' = all values in 0–1
+            probability space; 'scaled' = values in 1–v_max RU space.
+            If omitted, auto-detected (values ≤ 1.0 → raw, any > 1.0 → scaled).
+            Required when the vector is ambiguous (e.g. all values are exactly 1).
 
     AggregateResponse:
       type: object
@@ -1149,7 +1157,7 @@ components:
       properties:
         data:
           type: object
-          required: [raw, scaled, measurements, scalingBase, maximumValue]
+          required: [raw, scaled, measurements, scalingBase, maximumValue, inputScale]
           properties:
             raw:
               type: object
@@ -1171,6 +1179,10 @@ components:
                 upperBound:
                   type: integer
                   description: "Theoretical upper bound (in RU)"
+            inputScale:
+              type: string
+              enum: [raw, scaled]
+              description: "Resolved input scale (auto-detected or explicit)"
             measurements:
               type: array
               items:
@@ -1209,6 +1221,11 @@ components:
           type: number
           default: 100
           description: "v_max — maximum valid base measurement"
+        inputScale:
+          type: string
+          enum: [raw, scaled]
+          description: >
+            Explicit input-space declaration. See AggregateRequest.inputScale.
 
     AddMeasurementResponse:
       type: object
@@ -1265,6 +1282,11 @@ components:
           type: number
           default: 4
           description: "Aggregation tuning parameter (must match value used for aggregation)"
+        inputScale:
+          type: string
+          enum: [raw, scaled]
+          description: >
+            Explicit input-space declaration. See AggregateRequest.inputScale.
 
     NormalizeResponse:
       type: object
@@ -1375,6 +1397,11 @@ components:
           type: integer
           minimum: 0
           description: "Decimal places for normalized value (null = full precision)"
+        inputScale:
+          type: string
+          enum: [raw, scaled]
+          description: >
+            Explicit input-space declaration. See AggregateRequest.inputScale.
 
     ScoreResponse:
       type: object

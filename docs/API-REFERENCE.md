@@ -493,6 +493,23 @@ Compute the composite measurement from a risk factor vector.
 }
 ```
 
+**With explicit input scale** (required when the vector is ambiguous, e.g. all
+values are exactly 1):
+
+```json
+{
+  "measurements": [1, 1, 1],
+  "inputScale": "scaled"
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `measurements` | `number[]` | *(required)* | V-factor vector |
+| `scalingBase` | `number` | `4` | Decay base (must be > 1) |
+| `maximumValue` | `number` | `100` | v_max |
+| `inputScale` | `string` | auto-detect | `"raw"` (0–1) or `"scaled"` (1–v_max). If omitted, values ≤ 1.0 → raw, any > 1.0 → scaled. Mixed vectors without explicit `inputScale` are rejected. |
+
 **Response:**
 
 ```json
@@ -506,6 +523,7 @@ Compute the composite measurement from a risk factor vector.
       "aggregate": 43,
       "upperBound": 134
     },
+    "inputScale": "scaled",
     "measurements": [40, 10, 5, 5, 5, 5, 5, 5],
     "scalingBase": 4,
     "maximumValue": 100
@@ -529,6 +547,8 @@ Add a risk factor base measurement to an existing vector and return the updated 
 }
 ```
 
+The `inputScale` field is supported with the same semantics as `/aggregate`.
+
 **Response:**
 
 ```json
@@ -542,6 +562,7 @@ Add a risk factor base measurement to an existing vector and return the updated 
       "aggregate": 33,
       "previousAggregate": 22
     },
+    "inputScale": "scaled",
     "measurements": [30, 20, 5, 5, 5],
     "scalingBase": 4,
     "maximumValue": 100
@@ -568,6 +589,8 @@ $$\text{normalized} = \min\left(100,\ \frac{\text{raw}}{\text{upperBound}} \time
   "scalingBase": 4
 }
 ```
+
+The `inputScale` field is supported with the same semantics as `/aggregate`.
 
 **Response:**
 
@@ -653,6 +676,8 @@ Full RSK/VM pipeline: **aggregate → normalize → rate** in one request.
   "scale": "standard"
 }
 ```
+
+The `inputScale` field is supported with the same semantics as `/aggregate`.
 
 **Response:**
 

@@ -168,6 +168,11 @@ For long-running services where tokens expire, supply a provider function.
 The SDK calls it before every request:
 
 ```javascript
+// IDP credentials are stored in Infisical, not environment variables.
+// In a real deployment, load client_secret from your secrets store
+// (e.g., @rescor/core-config Configuration class).  The example below
+// uses a placeholder for illustration.
+
 let cachedToken = null
 let expiresAt = 0
 
@@ -177,6 +182,10 @@ async function getToken () {
     return cachedToken
   }
 
+  // In production, load these from Infisical via @rescor/core-config:
+  //   const url    = await configuration.getConfig('idp', 'base_url')
+  //   const realm  = await configuration.getConfig('idp', 'realm')
+  //   const secret = await configuration.getConfig('idp', 'client_secret')
   const response = await fetch(
     'http://keycloak.example.com/realms/rescor/protocol/openid-connect/token',
     {
@@ -185,7 +194,7 @@ async function getToken () {
       body: new URLSearchParams({
         grant_type: 'client_credentials',
         client_id: 'storm-api',
-        client_secret: process.env.STORM_CLIENT_SECRET
+        client_secret: '<from Infisical: idp.client_secret>'
       })
     }
   )
@@ -269,6 +278,32 @@ await storm.rsk().vm().measurements([0.20, 0.05, 0.05, 0.05]).aggregate()
 // → scaled.aggregate = 22
 ```
 
+### Disambiguating Input Scale
+
+When auto-detection is ambiguous — for example, a vector of `[1, 1, 1]` could
+be either p=1.0 (raw) or 1 RU (scaled) — use `.raw()` or `.scaled()` to
+declare the input space explicitly:
+
+```javascript
+// TestingCenter assigns 1 RU to every visible host → 1 RU, not p=1.0
+await storm.rsk().vm().measurements([1, 1, 1]).scaled().aggregate()
+
+// Probability-space inputs that happen to be ≤ 1.0
+await storm.rsk().vm().measurements([1, 1, 1]).raw().aggregate()
+```
+
+Mixed vectors (values both above and at-or-below 1.0) **without** an explicit
+input scale are rejected as ambiguous. Declare `.scaled()` to resolve:
+
+```javascript
+// Error without .scaled() — ambiguous mix of > 1 and ≤ 1 values
+await storm.rsk().vm().measurements([20, 0.5, 10]).scaled().aggregate()
+```
+
+> **Note:** `.raw()` with a numeric argument (e.g. `.raw(43)`) still sets the
+> raw aggregate for `normalize()` — only the no-argument `.raw()` declares
+> input scale.
+
 ### Accessing Dual Values
 
 ```javascript
@@ -306,6 +341,8 @@ const vm = storm.rsk().vm()
 | `.measurements(values)` | `number[]` | V-factor vector |
 | `.measurement(value)` | `number` | Single value (for `add` and `rate`) |
 | `.raw(value)` | `number` | Raw aggregate (for `normalize`) |
+| `.raw()` | — | Declare input as raw (0–1 probability space) |
+| `.scaled()` | — | Declare input as scaled (1–v_max RU space) |
 | `.scalingBase(value)` | `number` | Decay base, default 4 (must be > 1) |
 | `.maximumValue(value)` | `number` | v_max for scaling, default 100 |
 | `.scale(value)` | `string` | Rating scale: `'standard'` or `'alternate'` |

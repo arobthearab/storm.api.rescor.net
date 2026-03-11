@@ -83,12 +83,33 @@ export class RskVmBuilder {
   }
 
   /**
-   * Set the raw aggregate value (for normalize).
-   * @param {number} value
+   * Set the raw aggregate value (for normalize), or declare the measurement
+   * vector as raw-space (0–1 probabilities) when called with no arguments.
+   *
+   * - `.raw(245)` → sets `body.raw = 245` for the normalize endpoint
+   * - `.raw()`    → sets `body.inputScale = 'raw'` to override auto-detection
+   *
+   * @param {number} [value] - Raw aggregate value (omit to declare raw input scale)
    * @returns {RskVmBuilder}
    */
   raw (value) {
-    this._body.raw = value
+    if (value === undefined) {
+      this._body.inputScale = 'raw'
+    } else {
+      this._body.raw = value
+    }
+    return this
+  }
+
+  /**
+   * Declare the measurement vector as scaled-space (1–100 RU values).
+   * Overrides auto-detection so that values like 1 are treated as 1 RU,
+   * not as probability 1.0.
+   *
+   * @returns {RskVmBuilder}
+   */
+  scaled () {
+    this._body.inputScale = 'scaled'
     return this
   }
 

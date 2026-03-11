@@ -229,6 +229,37 @@ describe('RSK/VM builder', () => {
       .limit()
     expect(result.upperBound).toBe(133)
   })
+
+  it('should set inputScale "raw" via .raw() no-arg', async () => {
+    const { storm, fetch } = createStorm(200, { data: { aggregate: 100 } })
+    await storm.rsk().vm()
+      .measurements([0.5, 0.3])
+      .raw()
+      .aggregate()
+
+    const body = JSON.parse(fetch.mock.calls[0][1].body)
+    expect(body.inputScale).toBe('raw')
+  })
+
+  it('should set inputScale "scaled" via .scaled()', async () => {
+    const { storm, fetch } = createStorm(200, { data: { aggregate: 100 } })
+    await storm.rsk().vm()
+      .measurements([50, 30])
+      .scaled()
+      .aggregate()
+
+    const body = JSON.parse(fetch.mock.calls[0][1].body)
+    expect(body.inputScale).toBe('scaled')
+  })
+
+  it('should preserve .raw(value) for normalize', async () => {
+    const { storm, fetch } = createStorm(200, { data: { normalized: 75, raw: 245 } })
+    await storm.rsk().vm().raw(245).normalize()
+
+    const body = JSON.parse(fetch.mock.calls[0][1].body)
+    expect(body.raw).toBe(245)
+    expect(body.inputScale).toBeUndefined()
+  })
 })
 
 describe('RSK/RM builder', () => {
