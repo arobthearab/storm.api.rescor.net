@@ -5,9 +5,9 @@
   "type": "module",
   "main": "src/index.mjs",
   "scripts": {
-    "start": "node -r dotenv/config src/index.mjs",
-    "dev": "node -r dotenv/config --watch src/index.mjs",
-    "cypher:setup": "node -r dotenv/config src/setupDatabase.mjs",
+    "start": "node --env-file=.env src/index.mjs",
+    "dev": "node --env-file=.env --watch src/index.mjs",
+    "cypher:setup": "node --env-file=.env src/setupDatabase.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -16,7 +16,6 @@
     "@rescor/core-config": "file:../core.rescor.net/packages/core-config",
     "@rescor/core-db": "file:../core.rescor.net/packages/core-db",
     "@rescor/core-utils": "file:../core.rescor.net/packages/core-utils",
-    "dotenv": "^17.3.1",
     "express": "^4.21.0",
     "neo4j-driver": "^6.0.1",
     "uuid": "^11.1.0"
@@ -26,6 +25,6 @@
     "vitest": "^3.2.1"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.12.0"
   }
 }
