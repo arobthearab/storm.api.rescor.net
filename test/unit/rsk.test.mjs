@@ -13,7 +13,8 @@ import {
   rskNormalize,
   rskRate,
   computeScore,
-  normalizeToRaw
+  normalizeToRaw,
+  resolveInputScale
 } from '../../src/engines/rsk.mjs'
 
 describe('rskAggregate', () => {
@@ -164,6 +165,91 @@ describe('computeScore', () => {
     expect(scaledResult.raw.upperBound).toBeCloseTo(probabilityResult.raw.upperBound, 10)
     expect(scaledResult.scaled.upperBound).toBe(probabilityResult.scaled.upperBound)
     expect(scaledResult.rating).toBe(probabilityResult.rating)
+  })
+
+  it('should include resolved inputScale in result', () => {
+    const rawResult = computeScore([0.20, 0.05, 0.05, 0.05])
+    expect(rawResult.inputScale).toBe('raw')
+
+    const scaledResult = computeScore([20, 5, 5, 5])
+    expect(scaledResult.inputScale).toBe('scaled')
+  })
+
+  it('should accept explicit inputScale "raw"', () => {
+    const result = computeScore([0.20, 0.05, 0.05, 0.05], { inputScale: 'raw' })
+    expect(result.inputScale).toBe('raw')
+    expect(result.raw.aggregate).toBeCloseTo(0.21640625, 10)
+    expect(result.scaled.aggregate).toBe(22)
+  })
+
+  it('should accept explicit inputScale "scaled"', () => {
+    const result = computeScore([20, 5, 5, 5], { inputScale: 'scaled' })
+    expect(result.inputScale).toBe('scaled')
+    expect(result.scaled.aggregate).toBe(22)
+  })
+
+  it('should disambiguate [1, 1, 1] as scaled when inputScale="scaled"', () => {
+    const result = computeScore([1, 1, 1], { inputScale: 'scaled' })
+    expect(result.inputScale).toBe('scaled')
+    // 1/1 + 1/4 + 1/16 = 1.3125 → ceil = 2
+    expect(result.scaled.aggregate).toBe(2)
+  })
+
+  it('should disambiguate [1, 1, 1] as raw when inputScale="raw"', () => {
+    const result = computeScore([1, 1, 1], { inputScale: 'raw' })
+    expect(result.inputScale).toBe('raw')
+    // raw accumulator = 1/1 + 1/4 + 1/16 = 1.3125 → rawAggregate = 1.3125
+    // scaled = ceil(1.3125 * 100) = 132
+    expect(result.scaled.aggregate).toBe(132)
+  })
+
+  it('should reject mixed vectors without explicit inputScale', () => {
+    expect(() => computeScore([20, 0.5, 10])).toThrow(/ambiguity/)
+  })
+
+  it('should reject inputScale "raw" with values > 1.0', () => {
+    expect(() => computeScore([20, 5], { inputScale: 'raw' })).toThrow(/0–1 range/)
+  })
+
+  it('should allow mixed vectors with explicit inputScale "scaled"', () => {
+    // [20, 0.5, 10] with inputScale='scaled' — 0.5 treated as 0.5 RU
+    const result = computeScore([20, 0.5, 10], { inputScale: 'scaled' })
+    expect(result.inputScale).toBe('scaled')
+    expect(result.scaled.aggregate).toBeGreaterThan(0)
+  })
+})
+
+describe('resolveInputScale', () => {
+  it('should detect all-raw vectors', () => {
+    expect(resolveInputScale([0.5, 0.2, 0.1], 100)).toBe('raw')
+  })
+
+  it('should detect all-scaled vectors', () => {
+    expect(resolveInputScale([50, 20, 10], 100)).toBe('scaled')
+  })
+
+  it('should throw on mixed vectors without hint', () => {
+    expect(() => resolveInputScale([20, 0.5, 10], 100)).toThrow(/ambiguity/)
+  })
+
+  it('should accept explicit raw hint', () => {
+    expect(resolveInputScale([0.5, 0.2], 100, 'raw')).toBe('raw')
+  })
+
+  it('should accept explicit scaled hint', () => {
+    expect(resolveInputScale([20, 10], 100, 'scaled')).toBe('scaled')
+  })
+
+  it('should reject raw hint with values > 1.0', () => {
+    expect(() => resolveInputScale([20, 5], 100, 'raw')).toThrow(/0–1 range/)
+  })
+
+  it('should allow scaled hint on values <= 1.0 (the 1 RU case)', () => {
+    expect(resolveInputScale([1, 1, 1], 100, 'scaled')).toBe('scaled')
+  })
+
+  it('should allow scaled hint on mixed vectors', () => {
+    expect(resolveInputScale([20, 0.5, 10], 100, 'scaled')).toBe('scaled')
   })
 })
 

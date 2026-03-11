@@ -133,10 +133,11 @@ export function rskRate (measurement, options = {}) {
 /**
  * Full scoring pipeline: aggregate → normalize → rate.
  *
- * @param {number[]} measurements - V-factor measurements
+ * @param {number[]} measurements  - V-factor measurements
  * @param {object}   configuration
  * @param {number}   configuration.scalingBase  - default 4
  * @param {number}   configuration.maximumValue - default 100
+ * @param {string}   configuration.inputScale   - 'raw' | 'scaled' | undefined (auto-detect)
  * @param {string}   configuration.scale        - "standard" or "alternate"
  * @param {number}   configuration.precision    - decimal places (null for full)
  * @returns {object} Complete score result
@@ -146,11 +147,11 @@ export function computeScore (measurements, configuration = {}) {
   const maximumValue = configuration.maximumValue || 100
   const sorted = [...measurements].sort((a, b) => b - a)
 
-  const isRawScale = sorted.every(value => value <= 1.0)
-  const inputScale = isRawScale ? 1 : maximumValue
+  const resolvedInputScale = resolveInputScale(sorted, maximumValue, configuration.inputScale)
+  const scaleFactor = resolvedInputScale === 'raw' ? 1 : maximumValue
 
   const rawAccumulator = rskAggregateRaw(sorted, scalingBase)
-  const rawAggregate = rawAccumulator / inputScale
+  const rawAggregate = rawAccumulator / scaleFactor
   const scaledAggregate = Math.ceil(rawAggregate * maximumValue)
 
   const rawUpperBound = rskUpperBoundRaw(1, scalingBase)
@@ -176,10 +177,55 @@ export function computeScore (measurements, configuration = {}) {
       upperBound: scaledUpperBound
     },
     rating,
+    inputScale: resolvedInputScale,
     measurements: sorted,
     scalingBase,
     maximumValue
   }
+  return result
+}
+
+/**
+ * Resolve the input scale for a measurement vector.
+ *
+ * When an explicit inputScale is provided ('raw' | 'scaled'), it is returned
+ * directly after validation.  Otherwise, auto-detection is used:
+ *   - all values <= 1.0 → 'raw'
+ *   - all values > 1.0  → 'scaled'
+ *   - mix of both       → throws Error (caller must specify inputScale)
+ *
+ * @param {number[]} sorted       - Measurements sorted descending
+ * @param {number}   maximumValue - Maximum scaled value (for context in errors)
+ * @param {string}   [inputScale] - Explicit override: 'raw' | 'scaled'
+ * @returns {'raw'|'scaled'} Resolved input scale
+ * @throws {Error} If the vector is ambiguous without an explicit inputScale,
+ *                 or if inputScale='raw' but values exceed 1.0
+ */
+export function resolveInputScale (sorted, maximumValue, inputScale) {
+  let result
+
+  if (inputScale === 'raw') {
+    const hasScaledValues = sorted.some(value => value > 1.0)
+    if (hasScaledValues) {
+      throw new Error("inputScale 'raw' requires all measurements to be in 0–1 range")
+    }
+    result = 'raw'
+  } else if (inputScale === 'scaled') {
+    result = 'scaled'
+  } else {
+    const hasRawValues = sorted.some(value => value <= 1.0)
+    const hasScaledValues = sorted.some(value => value > 1.0)
+
+    if (hasRawValues && hasScaledValues) {
+      throw new Error(
+        'Measurement vector contains values both above and at-or-below 1.0 — ' +
+        "specify inputScale ('raw' or 'scaled') to resolve the ambiguity"
+      )
+    }
+
+    result = hasScaledValues ? 'scaled' : 'raw'
+  }
+
   return result
 }
 

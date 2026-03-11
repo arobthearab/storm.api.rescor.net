@@ -17,7 +17,8 @@ import {
   rskUpperBoundRaw,
   rskNormalize,
   rskRate,
-  computeScore
+  computeScore,
+  resolveInputScale
 } from '../engines/rsk.mjs'
 import {
   requireBody,
@@ -29,16 +30,6 @@ import {
 export function createRskVmRoutes () {
   const router = Router()
 
-  /**
-   * Detect whether an array of measurements is in raw space (all <= 1.0)
-   * and return the input scale factor (1 for raw, maximumValue for scaled).
-   */
-  function detectInputScale (measurements, maximumValue) {
-    const isRawScale = measurements.every(value => value <= 1.0)
-    const result = isRawScale ? 1 : maximumValue
-    return result
-  }
-
   // POST /v1/rsk/vm/aggregate
   router.post('/aggregate', (request, response, next) => {
     try {
@@ -46,12 +37,14 @@ export function createRskVmRoutes () {
       const measurements = validateNumberArray(body, 'measurements', { required: true })
       const scalingBase = validateNumber(body, 'scalingBase', { exclusiveMin: 1, defaultValue: 4 })
       const maximumValue = validateNumber(body, 'maximumValue', { defaultValue: 100 })
+      const inputScaleHint = validateString(body, 'inputScale', { enum: ['raw', 'scaled'] })
 
       const sorted = [...measurements].sort((a, b) => b - a)
-      const inputScale = detectInputScale(sorted, maximumValue)
+      const resolvedScale = resolveInputScale(sorted, maximumValue, inputScaleHint)
+      const scaleFactor = resolvedScale === 'raw' ? 1 : maximumValue
 
       const rawAccumulator = rskAggregateRaw(sorted, scalingBase)
-      const rawAggregate = rawAccumulator / inputScale
+      const rawAggregate = rawAccumulator / scaleFactor
       const scaledAggregate = Math.ceil(rawAggregate * maximumValue)
 
       const rawUpperBound = rskUpperBoundRaw(1, scalingBase)
@@ -67,6 +60,7 @@ export function createRskVmRoutes () {
             aggregate: scaledAggregate,
             upperBound: scaledUpperBound
           },
+          inputScale: resolvedScale,
           measurements: sorted,
           scalingBase,
           maximumValue
@@ -85,18 +79,20 @@ export function createRskVmRoutes () {
       const measurement = validateNumber(body, 'measurement', { required: true })
       const scalingBase = validateNumber(body, 'scalingBase', { exclusiveMin: 1, defaultValue: 4 })
       const maximumValue = validateNumber(body, 'maximumValue', { defaultValue: 100 })
-
-      const previousSorted = [...measurements].sort((a, b) => b - a)
-      const previousInputScale = detectInputScale(previousSorted, maximumValue)
-      const previousRaw = rskAggregateRaw(previousSorted, scalingBase)
-      const previousRawValue = previousRaw / previousInputScale
-      const previousScaled = Math.ceil(previousRawValue * maximumValue)
+      const inputScaleHint = validateString(body, 'inputScale', { enum: ['raw', 'scaled'] })
 
       const updatedMeasurements = [...measurements, measurement]
       const sorted = updatedMeasurements.sort((a, b) => b - a)
-      const inputScale = detectInputScale(sorted, maximumValue)
+      const resolvedScale = resolveInputScale(sorted, maximumValue, inputScaleHint)
+      const scaleFactor = resolvedScale === 'raw' ? 1 : maximumValue
+
+      const previousSorted = [...measurements].sort((a, b) => b - a)
+      const previousRaw = rskAggregateRaw(previousSorted, scalingBase)
+      const previousRawValue = previousRaw / scaleFactor
+      const previousScaled = Math.ceil(previousRawValue * maximumValue)
+
       const rawAccumulator = rskAggregateRaw(sorted, scalingBase)
-      const rawAggregate = rawAccumulator / inputScale
+      const rawAggregate = rawAccumulator / scaleFactor
       const scaledAggregate = Math.ceil(rawAggregate * maximumValue)
 
       response.json({
@@ -109,6 +105,7 @@ export function createRskVmRoutes () {
             aggregate: scaledAggregate,
             previousAggregate: previousScaled
           },
+          inputScale: resolvedScale,
           measurements: sorted,
           scalingBase,
           maximumValue
@@ -126,12 +123,13 @@ export function createRskVmRoutes () {
       const raw = validateNumber(body, 'raw', { required: true, min: 0 })
       const maximumValue = validateNumber(body, 'maximumValue', { defaultValue: 100 })
       const scalingBase = validateNumber(body, 'scalingBase', { exclusiveMin: 1, defaultValue: 4 })
+      const inputScaleHint = validateString(body, 'inputScale', { enum: ['raw', 'scaled'] })
 
       const rawUpperBound = rskUpperBoundRaw(1, scalingBase)
       const scaledUpperBound = rskUpperBound(maximumValue, scalingBase)
 
-      // Detect if raw is in raw space (≤ 1.0) or scaled
-      const isRawScale = raw <= 1.0
+      const resolvedScale = resolveInputScale([raw], maximumValue, inputScaleHint)
+      const isRawScale = resolvedScale === 'raw'
       const rawValue = isRawScale ? raw : raw / maximumValue
       const rawNormalized = rawValue / rawUpperBound
       const scaledNormalized = rskNormalize(
@@ -150,6 +148,7 @@ export function createRskVmRoutes () {
             normalized: scaledNormalized,
             upperBound: scaledUpperBound
           },
+          inputScale: resolvedScale,
           raw,
           maximumValue,
           scalingBase
@@ -192,8 +191,9 @@ export function createRskVmRoutes () {
       const maximumValue = validateNumber(body, 'maximumValue', { defaultValue: 100 })
       const scale = validateString(body, 'scale', { enum: ['standard', 'alternate'], defaultValue: 'standard' })
       const precision = validateNumber(body, 'precision', { integer: true })
+      const inputScaleHint = validateString(body, 'inputScale', { enum: ['raw', 'scaled'] })
 
-      const scoreResult = computeScore(measurements, { scalingBase, maximumValue, scale, precision })
+      const scoreResult = computeScore(measurements, { scalingBase, maximumValue, scale, precision, inputScale: inputScaleHint })
 
       response.json({ data: scoreResult })
     } catch (error) {
