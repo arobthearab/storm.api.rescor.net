@@ -5,9 +5,9 @@
   "type": "module",
   "main": "src/index.mjs",
   "scripts": {
-    "start": "node --env-file=.env src/index.mjs",
-    "dev": "node --env-file=.env --watch src/index.mjs",
-    "cypher:setup": "node --env-file=.env src/setupDatabase.mjs",
+    "start": "node --env-file-if-exists=../core.rescor.net/.env --env-file=.env src/index.mjs",
+    "dev": "node --env-file-if-exists=../core.rescor.net/.env --env-file=.env --watch src/index.mjs",
+    "cypher:setup": "node --env-file-if-exists=../core.rescor.net/.env --env-file=.env src/setupDatabase.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
