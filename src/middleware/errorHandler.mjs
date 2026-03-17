@@ -3,7 +3,7 @@
  * JSON error responses per the STORM error envelope convention.
  */
 
-import { ValidationError, NotFoundError, AuthenticationError, AuthorizationError } from '@rescor/core-utils'
+import { ValidationError, NotFoundError, AuthenticationError, AuthorizationError } from '@rescor-llc/core-utils'
 
 /**
  * Map known error types to HTTP status codes.

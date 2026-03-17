@@ -1,8 +1,8 @@
 /**
- * @rescor/storm-sdk — Node.js SDK for the STORM Risk Computation Engine API.
+ * @rescor-llc/storm-sdk — Node.js SDK for the STORM Risk Computation Engine API.
  *
  * Usage:
- *   import { Storm } from '@rescor/storm-sdk'
+ *   import { Storm } from '@rescor-llc/storm-sdk'
  *
  *   const storm = new Storm({ baseUrl: 'http://localhost:3200', token: 'dev' })
  *

@@ -12,10 +12,10 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@rescor/core-auth": "file:../core.rescor.net/packages/core-auth",
-    "@rescor/core-config": "file:../core.rescor.net/packages/core-config",
-    "@rescor/core-db": "file:../core.rescor.net/packages/core-db",
-    "@rescor/core-utils": "file:../core.rescor.net/packages/core-utils",
+    "@rescor-llc/core-auth": "^0.2.0",
+    "@rescor-llc/core-config": "^1.0.0",
+    "@rescor-llc/core-db": "^1.0.0",
+    "@rescor-llc/core-utils": "^1.0.0",
     "express": "^4.21.0",
     "neo4j-driver": "^6.0.1",
     "uuid": "^11.1.0"

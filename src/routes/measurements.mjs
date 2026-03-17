@@ -7,7 +7,7 @@
  */
 
 import { Router } from 'express'
-import { NotFoundError } from '@rescor/core-utils'
+import { NotFoundError } from '@rescor-llc/core-utils'
 import { validateCreateMeasurement } from '../validators/index.mjs'
 import { normalizeToRaw, rskAggregateRaw, rskUpperBoundRaw } from '../engines/rsk.mjs'
 import { computeEffective } from '../engines/modifiers.mjs'

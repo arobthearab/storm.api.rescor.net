@@ -16,7 +16,7 @@
  *   validate (input)      — custom validation (default uses factor definitions)
  */
 
-import { ValidationError } from '@rescor/core-utils'
+import { ValidationError } from '@rescor-llc/core-utils'
 
 export class Transform {
   /**

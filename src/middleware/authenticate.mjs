@@ -1,10 +1,10 @@
 /**
- * Authentication middleware — validates bearer tokens via @rescor/core-auth.
+ * Authentication middleware — validates bearer tokens via @rescor-llc/core-auth.
  *
  * In development phase (determined by PhaseManager), authentication is bypassed
  * and a synthetic user is attached to the request.
  *
- * In production, delegates to @rescor/core-auth validateKeycloak (JWKS + jose).
+ * In production, delegates to @rescor-llc/core-auth validateKeycloak (JWKS + jose).
  * After successful authentication, auto-registers the user in Neo4j via UserStore.
  *
  * Recorder event codes (7020–7029):
@@ -14,7 +14,7 @@
  *   7025  User auto-registered       (info)
  */
 
-import { validateKeycloak } from '@rescor/core-auth'
+import { validateKeycloak } from '@rescor-llc/core-auth'
 import { getRecorder } from './requestLogger.mjs'
 
 // ── Event Codes ─────────────────────────────────────────────────────────────
@@ -27,7 +27,7 @@ const EVENT_USER_REGISTERED   = 7025
  * Build authentication middleware.
  *
  * @param {object} options
- * @param {import('@rescor/core-db').PhaseManager} options.phaseManager
+ * @param {import('@rescor-llc/core-db').PhaseManager} options.phaseManager
  * @param {object} options.oidc - { keycloakUrl, realm, audience }
  * @param {import('../persistence/UserStore.mjs').UserStore} [options.userStore]
  * @returns {Function} Express middleware

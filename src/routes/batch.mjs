@@ -6,7 +6,7 @@
  */
 
 import { Router } from 'express'
-import { NotFoundError } from '@rescor/core-utils'
+import { NotFoundError } from '@rescor-llc/core-utils'
 import { normalizeToRaw } from '../engines/rsk.mjs'
 import {
   validateFactorBatch,

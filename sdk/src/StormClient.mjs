@@ -9,7 +9,7 @@ import { mapApiError, NetworkError } from './errors/StormError.mjs'
 
 const DEFAULT_BASE_URL = 'http://localhost:3200'
 const DEFAULT_TIMEOUT_MILLISECONDS = 30_000
-const SDK_USER_AGENT = '@rescor/storm-sdk/0.1.0'
+const SDK_USER_AGENT = '@rescor-llc/storm-sdk/0.1.0'
 
 /**
  * STORM API HTTP client.

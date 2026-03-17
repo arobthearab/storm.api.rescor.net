@@ -6,7 +6,7 @@
 // ════════════════════════════════════════════════════════════════════
 
 import neo4j from 'neo4j-driver'
-import { Neo4jOperations } from '@rescor/core-db'
+import { Neo4jOperations } from '@rescor-llc/core-db'
 
 // ────────────────────────────────────────────────────────────────────
 // SessionPerQueryWrapper — opens a fresh session for every query()
@@ -81,7 +81,7 @@ class SessionPerQueryWrapper {
 // ────────────────────────────────────────────────────────────────────
 
 export async function createConfiguration () {
-  const { Configuration } = await import('@rescor/core-config')
+  const { Configuration } = await import('@rescor-llc/core-config')
 
   const configuration = new Configuration({
     enableInfisical: true,
@@ -104,7 +104,7 @@ export async function createConfiguration () {
 // ────────────────────────────────────────────────────────────────────
 
 export async function createDatabase (configuration) {
-  // Load all Neo4j configuration from Infisical via @rescor/core-config.
+  // Load all Neo4j configuration from Infisical via @rescor-llc/core-config.
   // No process.env reads — Configuration-First Runtime Policy.
 
   const uri = await configuration.getConfig('neo4j', 'uri') || 'bolt://localhost:17787'

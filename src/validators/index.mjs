@@ -1,11 +1,11 @@
 /**
  * Input validation helpers.
  *
- * Each validator throws a ValidationError from @rescor/core-utils on failure.
+ * Each validator throws a ValidationError from @rescor-llc/core-utils on failure.
  * Validators are thin — they check structure and ranges, not business logic.
  */
 
-import { ValidationError } from '@rescor/core-utils'
+import { ValidationError } from '@rescor-llc/core-utils'
 
 /**
  * Require that body is a non-null object.

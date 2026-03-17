@@ -11,7 +11,7 @@
 
 import { Transform } from './Transform.mjs'
 import { rskAggregate } from '../engines/rsk.mjs'
-import { ValidationError } from '@rescor/core-utils'
+import { ValidationError } from '@rescor-llc/core-utils'
 
 export class ScepTransform extends Transform {
   static get domain () { return 'control' }

@@ -229,7 +229,7 @@ describe('StormClient', () => {
 
       await client.get('/health')
 
-      expect(fetch.mock.calls[0][1].headers['User-Agent']).toBe('@rescor/storm-sdk/0.1.0')
+      expect(fetch.mock.calls[0][1].headers['User-Agent']).toBe('@rescor-llc/storm-sdk/0.1.0')
     })
 
     it('should merge extra headers', async () => {

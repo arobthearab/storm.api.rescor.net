@@ -15,7 +15,7 @@
 import { Router } from 'express'
 import { resolve, defaultModel, listAll } from '../transforms/index.mjs'
 import { requireBody, validateNumber, validateString } from '../validators/index.mjs'
-import { ValidationError } from '@rescor/core-utils'
+import { ValidationError } from '@rescor-llc/core-utils'
 
 /**
  * Build a domain route handler.

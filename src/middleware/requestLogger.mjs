@@ -1,7 +1,7 @@
 /**
  * Request Logger Middleware — Structured Activity Logging via Recorder
  *
- * Logs every HTTP request and its response using @rescor/core-utils Recorder.
+ * Logs every HTTP request and its response using @rescor-llc/core-utils Recorder.
  * Placed after requestTracing so that x-request-id is available.
  *
  * Event codes (7000–7099 range — STORM API):
@@ -14,7 +14,7 @@
  * Log file: storm-api.log (resolved via RESCOR_LOG_BASE or /tmp/rescor/logs)
  */
 
-import { Recorder } from '@rescor/core-utils'
+import { Recorder } from '@rescor-llc/core-utils'
 
 // ── Event Codes ─────────────────────────────────────────────────────────────
 const EVENT_REQUEST_RECEIVED  = 7000

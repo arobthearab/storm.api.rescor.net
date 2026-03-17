@@ -2,8 +2,8 @@
  * STORM API — Main Application Entry Point
  *
  * Wires together:
- * - @rescor/core-db PhaseManager for deployment phase detection
- * - @rescor/core-auth via authentication middleware (dev bypass when isDevelopment)
+ * - @rescor-llc/core-db PhaseManager for deployment phase detection
+ * - @rescor-llc/core-auth via authentication middleware (dev bypass when isDevelopment)
  * - Express routes for all endpoints (including batch)
  * - Neo4j persistence for measurement sessions
  *
@@ -11,7 +11,7 @@
  */
 
 import express from 'express'
-import { PhaseManager } from '@rescor/core-db'
+import { PhaseManager } from '@rescor-llc/core-db'
 import { MeasurementStore, LinkageStore, UserStore, createConfiguration, createDatabase } from './persistence/index.mjs'
 import { createAuthenticationMiddleware, authorize, errorHandler, securityHeaders, requestTracing, requestLogger, initialiseRequestLogger, closeRecorder } from './middleware/index.mjs'
 import {
@@ -36,7 +36,7 @@ const PORT = 3200
  */
 async function start () {
   // -----------------------------------------------------------------------
-  // 1. Phase detection via @rescor/core-db PhaseManager
+  // 1. Phase detection via @rescor-llc/core-db PhaseManager
   // -----------------------------------------------------------------------
   const phaseManager = new PhaseManager()
   const phaseConfig = phaseManager.getPhaseConfig()
@@ -55,7 +55,7 @@ async function start () {
   console.log('[storm] Store: Neo4j (SessionPerQueryWrapper + LinkageStore + UserStore)')
 
   // -----------------------------------------------------------------------
-  // 2b. Activity Recorder — structured request logging via @rescor/core-utils
+  // 2b. Activity Recorder — structured request logging via @rescor-llc/core-utils
   // -----------------------------------------------------------------------
   const recorder = initialiseRequestLogger({
     tee: phaseConfig.isDevelopment

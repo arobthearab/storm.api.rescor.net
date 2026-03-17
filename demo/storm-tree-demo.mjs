@@ -14,7 +14,7 @@
  *
  * Authentication (--auth):
  *   Acquires a JWT from Keycloak before running calculations.
- *   Keycloak credentials are loaded from Infisical via @rescor/core-config
+ *   Keycloak credentials are loaded from Infisical via @rescor-llc/core-config
  *   (Configuration-First Runtime Policy).  The .env file must contain
  *   Infisical bootstrap credentials — see docs/CONFIGURATION.md.
  *
@@ -42,7 +42,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { rskAggregate, rskNormalize, rskUpperBound, rskRate, computeScore } from '../src/engines/rsk.mjs'
 import { computeEffective } from '../src/engines/modifiers.mjs'
-import { decodeToken } from '@rescor/core-auth'
+import { decodeToken } from '@rescor-llc/core-auth'
 
 // ════════════════════════════════════════════════════════════════════
 // Constants
@@ -466,7 +466,7 @@ function parseArguments (argv) {
 /**
  * Acquire a JWT from Keycloak using either password or client_credentials grant.
  *
- * Keycloak connection details are loaded from Infisical via @rescor/core-config.
+ * Keycloak connection details are loaded from Infisical via @rescor-llc/core-config.
  * Only KEYCLOAK_USERNAME / KEYCLOAK_PASSWORD may come from env vars (dev/testing).
  *
  * @returns {Promise<{ accessToken: string, claims: object, grantType: string }>}

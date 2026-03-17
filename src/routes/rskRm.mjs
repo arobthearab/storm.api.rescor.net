@@ -20,7 +20,7 @@ import {
   validateNumber,
   validateNumberArray
 } from '../validators/index.mjs'
-import { ValidationError } from '@rescor/core-utils'
+import { ValidationError } from '@rescor-llc/core-utils'
 
 /**
  * Validate a RiskFactor array.
