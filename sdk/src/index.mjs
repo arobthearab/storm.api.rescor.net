@@ -130,3 +130,4 @@ export {
   NetworkError,
   mapApiError
 } from './errors/StormError.mjs'
+export { createKeycloakTokenProvider } from './auth/KeycloakTokenProvider.mjs'
