@@ -1,0 +1,80 @@
+name: Publish SDK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version-bump:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      dry-run:
+        description: 'Dry run (no actual publish)'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  publish:
+    name: Publish @rescor-llc/storm-sdk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@rescor-llc'
+
+      - name: Install SDK dependencies
+        run: cd sdk && npm ci
+
+      - name: Run SDK tests
+        run: cd sdk && npm test
+
+      - name: Configure git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+      - name: Bump version
+        run: |
+          cd sdk
+          npm version ${{ github.event.inputs.version-bump }} --no-git-tag-version
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+
+      - name: Dry run publish
+        if: github.event.inputs.dry-run == 'true'
+        run: |
+          cd sdk
+          npm publish --dry-run
+          echo "✅ Dry run successful for @rescor-llc/storm-sdk@${{ env.NEW_VERSION }}"
+
+      - name: Publish to GitHub Packages
+        if: github.event.inputs.dry-run == 'false'
+        run: cd sdk && npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+
+      - name: Commit and tag
+        if: github.event.inputs.dry-run == 'false'
+        run: |
+          git add sdk/package.json
+          git commit -m "chore: bump storm-sdk to v${{ env.NEW_VERSION }}"
+          git tag "storm-sdk@${{ env.NEW_VERSION }}"
+          git pull --rebase --autostash origin main
+          git push origin main
+          git push origin "storm-sdk@${{ env.NEW_VERSION }}"
