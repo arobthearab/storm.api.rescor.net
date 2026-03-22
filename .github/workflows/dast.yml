@@ -1,0 +1,25 @@
+name: DAST Scan
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 0'
+
+jobs:
+  dast:
+    name: DAST Pipeline
+    uses: arobthearab/core.rescor.net/.github/workflows/reusable-dast.yml@main
+    permissions:
+      security-events: write
+      contents: read
+      issues: write
+    with:
+      node-version: '20'
+      app-start-command: 'node src/index.mjs'
+      app-port: '3200'
+      health-endpoint: '/health'
+      setup-command: 'node src/setupDatabase.mjs'
+      zap-rules-file: '.zap/rules.tsv'
+      zap-fail-action: true
+    secrets:
+      pkg-token: ${{ secrets.PKG_TOKEN }}

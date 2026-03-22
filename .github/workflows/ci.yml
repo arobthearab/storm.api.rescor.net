@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: CI Pipeline
+    uses: arobthearab/core.rescor.net/.github/workflows/reusable-ci.yml@main
+    with:
+      node-version: '20'
+      test-command: 'npm test'
+      build-command: ''
+      lint-command: ''
+      audit-level: 'high'
+    secrets:
+      pkg-token: ${{ secrets.PKG_TOKEN }}

@@ -57,6 +57,13 @@ export function createAuthenticationMiddleware ({ phaseManager, oidc = {}, userS
   return async function authenticate (request, response, next) {
     const recorder = getRecorder()
 
+    // ── DAST scanner bypass (CI only — requires DAST_MODE + NODE_ENV=test) ──
+    if (process.env.DAST_MODE === 'true' && process.env.NODE_ENV === 'test') {
+      request.user = { sub: 'dast-scanner', roles: ['reader'], iss: 'dast', aud: 'storm-api' }
+      next()
+      return
+    }
+
     // ── Development bypass ──────────────────────────────────────────────
     if (phaseManager.isDevelopment()) {
       request.user = { ...developmentUser }

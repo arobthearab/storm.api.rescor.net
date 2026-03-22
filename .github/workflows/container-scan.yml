@@ -1,0 +1,23 @@
+name: Container Scan
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+jobs:
+  scan:
+    name: Container Vulnerability Scan
+    uses: arobthearab/core.rescor.net/.github/workflows/reusable-container-scan.yml@main
+    permissions:
+      security-events: write
+      contents: read
+    with:
+      dockerfile-path: './Dockerfile'
+      image-tag: 'storm-api:scan'
+      severity: 'HIGH,CRITICAL'
+      exit-code: '1'
