@@ -21,8 +21,8 @@
     "uuid": "^11.1.0"
   },
   "devDependencies": {
-    "jose": "^6.2.0",
-    "vitest": "^3.2.1"
+    "jose": "^6.2.2",
+    "vitest": "^4.1.0"
   },
   "engines": {
     "node": ">=20.12.0"
